@@ -1,14 +1,13 @@
 import torch
-#import torchvision
+import torchvision
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 
-from data_utils import resize_normalize, cfar_transform, load_and_transform_images, subsample_dataset, CustomDataset
-from model import Net, train, calculate_accuracy, calculate_per_class_accuracy
-from visualization_utils import imshow
-
+from data.data_utils import resize_normalize, cfar_transform, load_and_transform_images, subsample_dataset, CustomDataset
+from model.model import Net, train, calculate_accuracy, calculate_per_class_accuracy
+from viewer.visualization_utils import imshow
 
 
 # Define some global variables
@@ -78,7 +77,7 @@ if 'cifar_net' not in st.session_state:
     st.session_state.cifar_net = None
 
 # Create a button for triggering the training process
-if st.button('Train the models'):
+if st.button('Train models'):
 
     # Display a message while the model is being trained
     training_message = st.empty()
@@ -182,9 +181,15 @@ if st.button('Train the models'):
     st.session_state.prev_custom_net_per_class_accuracy = custom_net_per_class_accuracy
 
 
+
+
+
 # TODO: Create new images
 # TODO: Add some image interactivity
 # TODO: Save synthetic images in cifar format to allow for creation of git repo
 # TODO: more optimization of NN architecture?
 # TODO: See how easy it would be to save the cifar NN to avoid retraining it all the time
 # TODO: split this project up into a few files and use imports to clean it up
+
+
+
