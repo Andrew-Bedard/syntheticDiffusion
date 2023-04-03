@@ -20,7 +20,27 @@ def resize_normalize(img_path):
 
     image = Image.open(img_path)  # Load your image
     image = transform(image)  # Apply the transform
-    return (image)
+    return image
+
+def synthetic_load(img_path, resize=False):
+    """
+
+    :param img_path:
+    :param resize_normalize:
+    :return:
+    """
+
+    if resize:
+        return resize_normalize(img_path)
+
+    transform = transforms.Compose([
+        transforms.ToTensor(),  # Convert to tensor
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Normalize
+    ])
+
+    image = Image.open(img_path)  # Load your image
+    image = transform(image)  # Apply the transform
+    return image
 
 def cfar_transform(cfar_img):
     """
@@ -52,10 +72,10 @@ def cfar_transform(cfar_img):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
 
-    return (transform(cfar_img))
+    return transform(cfar_img)
 
 
-def load_and_transform_images(img_dir):
+def load_and_transform_images(img_dir, resize=False):
     """
     Loads and transforms images from a specified directory.
 
@@ -64,12 +84,13 @@ def load_and_transform_images(img_dir):
 
     Returns:
         torch.Tensor: A tensor containing the processed images.
+        :param resize:
     """
     # Get a list of the image paths
     img_paths = [os.path.join(img_dir, f) for f in os.listdir(img_dir) if f.endswith('.png')]
 
     # Process each image and store the result in a list
-    new_images = [resize_normalize(img_path) for img_path in img_paths]
+    new_images = [synthetic_load(img_path, resize) for img_path in img_paths]
 
     # Convert the list of images to a tensor
     new_images = torch.stack(new_images)
