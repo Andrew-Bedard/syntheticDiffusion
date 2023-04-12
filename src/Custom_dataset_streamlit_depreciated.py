@@ -590,18 +590,104 @@ fig = bar_chart_classes(class_counts_df)
 st.pyplot(fig)
 # st.bar_chart(class_counts_df.set_index("Class"))  # This is the previous version of the bar chart, which I like better but I don't know if it's possible to rotate the class labels
 
-st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
-# Create a slider or number input for the cat proportion
-cat_proportion = st.slider("Proportion of cat images:", min_value=0.0, max_value=0.1, value=0.05, step=0.01)
+# Create a button to decrease cat samples
 
-# Pass the cat_proportion to the load_cifar10 function
-trainset, trainloader, testset, testloader = load_cifar10(percentage=10, cat_proportion=cat_proportion)
+# # If the button is pressed, show the slider and store its value in the session state
+# st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
+# cat_proportion = st.slider("Proportion of cat images:", min_value=0.0, max_value=0.1, value=0.05, step=0.01)
+# st.session_state.cat_proportion = cat_proportion
+#
+# # If the session state has a cat_proportion, use it to load the data and display the chart
+# if "cat_proportion" in st.session_state:
+#     trainset, trainloader, testset, testloader = load_cifar10(percentage=10, cat_proportion=st.session_state.cat_proportion)
+#
+#     st.markdown("Let's take a look at the distribution of classes for our subsampled dataset now")
+#     class_counts_df = class_distribution_df(trainset)
+#     fig = bar_chart_classes(class_counts_df)
+#     st.pyplot(fig)
 
-# Let's take a look at the distribution of classes in our CIFAR-10 subsample
-st.markdown("Let's take a look at the distribution of classes for our subsampled dataset now")
-class_counts_df = class_distribution_df(trainset)
-fig = bar_chart_classes(class_counts_df)
-st.pyplot(fig)
+st.markdown("# DUMMY")
+from bokeh.models import ColumnDataSource, CustomJS, Slider
+from bokeh.plotting import figure
+from bokeh.layouts import column
+
+
+def interactive_bar_chart(class_labels, initial_proportions):
+    # Create a DataFrame with the class labels and initial proportions
+    data = pd.DataFrame({"classes": class_labels, "proportions": initial_proportions})
+
+    # Create a ColumnDataSource from the DataFrame
+    source = ColumnDataSource(data)
+
+    # Create the interactive bar chart
+    plot = figure(x_range=class_labels, height=500, title="Class Proportions")
+    plot.vbar(x="classes", top="proportions", width=0.9, source=source)
+    plot.y_range.start = 0
+    plot.xgrid.grid_line_color = None
+    plot.xaxis.axis_label = "Classes"
+    plot.yaxis.axis_label = "Proportions"
+
+    # Create a slider for the cat class
+    slider = Slider(start=0, end=0.1, value=0.1, step=0.01, title="Proportion of cat images")
+
+    # Update the callback to store the current class proportions in the session state
+    callback = CustomJS(args=dict(source=source, slider=slider), code="""
+        const data = source.data;
+        const cat_proportion = slider.value;
+
+        // Calculate the sum of the proportions of other classes
+        const other_classes_sum = data["proportions"].reduce((sum, value, index) => {
+            return sum + (data["classes"][index] === "cat" ? 0 : value);
+        }, 0);
+
+        for (let i = 0; i < data["classes"].length; i++) {
+            if (data["classes"][i] === "cat") {
+                data["proportions"][i] = cat_proportion;
+            } else {
+                data["proportions"][i] = data["proportions"][i] * (1 - cat_proportion) / other_classes_sum;
+            }
+        }
+        source.change.emit();
+
+        // Store the current class proportions in the session state and trigger a re-run
+        streamlit.setSessionState({class_proportions: data["proportions"], rerun: true});
+    """)
+
+    # Assign the callback to the slider
+    slider.js_on_change("value", callback)
+
+    # Display the interactive bar chart and the slider using Bokeh
+    st.bokeh_chart(column(slider, plot))
+
+class_labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+initial_proportions = [0.1] * 10
+
+interactive_bar_chart(class_labels, initial_proportions)
+
+# Check if the current class proportions are available in the session state
+if "class_proportions" in st.session_state:
+# Convert the current class proportions to a dictionary (replace with your actual class labels)
+    current_class_proportions = dict(zip(class_labels, st.session_state.class_proportions))
+
+    # Reload the dataset and display other visualizations using the current class proportions
+    trainset, trainloader, testset, testloader = load_cifar10(percentage=10,
+                                                              class_proportions=current_class_proportions)
+
+    # Display any other visualizations or information related to the dataset
+    # ...
+
+    # Reset the 'rerun' flag in the session state after the app has re-run
+    if "rerun" in st.session_state and st.session_state.rerun:
+        st.session_state.rerun = False
+
+if st.button('show cat class length for debugging'):
+    # Let's take a look at the distribution of classes in our CIFAR-10 subsample
+    st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
+    class_counts_df = class_distribution_df(trainset)
+    fig = bar_chart_classes(class_counts_df)
+    st.pyplot(fig)
+
+st.markdown("# End of DUMMY")
 
 # Create a button for triggering the training process for base cifar-10 model
 if st.button('Train CIFAR-10 base model'):
