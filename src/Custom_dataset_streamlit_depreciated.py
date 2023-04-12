@@ -9,11 +9,14 @@ import torch.optim as optim
 from PIL import Image
 import os
 import streamlit as st
+import random
+import pandas as pd
+from collections import Counter
 
 torch.manual_seed(0)
 
+
 def imshow(img):
-    
     """
     Display an image in a matplotlib plot.
 
@@ -35,16 +38,17 @@ def imshow(img):
         matplotlib plot.
 
     """
-    img = img / 2 + 0.5     # unnormalize
+    img = img / 2 + 0.5  # unnormalize
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
-    
 
-def train(net, trainloader, device, epochs=4, print_every=2000, learning_rate=0.001, momentum=0.9):
+
+def train(net, model_trainloader, device, epochs=4, print_every=2000, learning_rate=0.001, momentum=0.9,
+          progress_callback=None, progress_bar=None):
     """
     Trains a PyTorch neural network using a cross entropy loss function and stochastic gradient descent optimizer.
-    
+
     Args:
     - net: A PyTorch neural network model to train.
     - trainloader: A PyTorch DataLoader representing the training set.
@@ -53,15 +57,16 @@ def train(net, trainloader, device, epochs=4, print_every=2000, learning_rate=0.
     - print_every (optional): An integer indicating how often to print the loss during training (default 2000).
     - learning_rate (optional): A float indicating the learning rate for the optimizer (default 0.001).
     - momentum (optional): A float indicating the momentum for the optimizer (default 0.9).
+    - progress_callback (optional): A function to call with the progress of the training (default None).
     """
-    
+
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=learning_rate, momentum=momentum)
 
     for epoch in range(epochs):  # loop over the dataset multiple times
 
         running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
+        for i, data in enumerate(model_trainloader, 0):
             # get the inputs; data is a list of [inputs, labels]
             # inputs, labels = data
             inputs, labels = data[0].to(device), data[1].to(device)
@@ -81,7 +86,12 @@ def train(net, trainloader, device, epochs=4, print_every=2000, learning_rate=0.
                 print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / print_every:.3f}')
                 running_loss = 0.0
 
+            # Update progress
+            if progress_callback is not None:
+                progress_callback(progress_bar, (epoch * len(model_trainloader) + i) / (epochs * len(model_trainloader)))
+
     print('Finished Training')
+
 
 def calculate_accuracy(model, dataloader, device):
     correct = 0
@@ -95,6 +105,7 @@ def calculate_accuracy(model, dataloader, device):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
     return 100 * correct / total
+
 
 def calculate_per_class_accuracy(model, dataloader, device, num_classes):
     class_correct = list(0. for i in range(num_classes))
@@ -113,23 +124,29 @@ def calculate_per_class_accuracy(model, dataloader, device, num_classes):
     per_class_accuracy = [100 * class_correct[i] / class_total[i] for i in range(num_classes)]
     return per_class_accuracy
 
-def resize_normalize(img_path):
-    
+
+def resize_normalize(img_path, resize=False):
     """ Resize 512 by 512 rgb images that we get from stable diffusion, convert to pytorch tensor, then normalize
     """
-    
-    transform = transforms.Compose([
-        transforms.Resize((32, 32)),  # Resize to 32x32
-        transforms.ToTensor(),  # Convert to tensor
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Normalize
-    ])
+
+    if resize:
+        transform = transforms.Compose([
+            transforms.Resize((32, 32)),  # Resize to 32x32
+            transforms.ToTensor(),  # Convert to tensor
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Normalize
+        ])
+    else:
+        transform = transforms.Compose([
+            transforms.ToTensor(),  # Convert to tensor
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Normalize
+        ])
 
     image = Image.open(img_path)  # Load your image
     image = transform(image)  # Apply the transform
-    return(image)
+    return (image)
+
 
 def cfar_transform(cfar_img):
-    
     """
     Transform and normalize an image from the CIFAR-10 dataset using PyTorch transforms.
 
@@ -153,13 +170,14 @@ def cfar_transform(cfar_img):
         numpy.ndarray format.
 
     """
-    
+
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
-    
-    return(transform(cfar_img))
+
+    return (transform(cfar_img))
+
 
 def load_and_transform_images(img_dir):
     """
@@ -181,6 +199,7 @@ def load_and_transform_images(img_dir):
     new_images = torch.stack(new_images)
 
     return new_images
+
 
 class Net(nn.Module):
     """
@@ -235,6 +254,7 @@ class Net(nn.Module):
         x = self.fc3(x)
         return x
 
+
 class CustomDataset(torch.utils.data.Dataset):
     """
     CustomDataset class that extends the torch.utils.data.Dataset class.
@@ -283,55 +303,418 @@ class CustomDataset(torch.utils.data.Dataset):
         return len(self.images)
 
 
+class CIFAR10Subsample(torch.utils.data.Dataset):
+    """
+    A custom PyTorch Dataset class that subsamples the CIFAR-10 dataset.
+
+    Args:
+        root (str): The root directory where the dataset should be stored.
+        train (bool, optional): If True, use the training dataset; if False, use the test dataset. Defaults to True.
+        transform (callable, optional): A function or transform that takes in a PIL image and returns a transformed version. Defaults to None.
+        percentage (int, optional): The percentage of the original dataset to include in the subsampled dataset. Defaults to 10.
+        download (bool, optional): If True, download the dataset if it is not already present in the specified root directory. Defaults to True.
+        seed (int, optional): The random seed to use when selecting samples. Defaults to None.
+
+    Example:
+        >>> cifar10_subsample = CIFAR10Subsample(root='./data', train=True, transform=transforms.ToTensor(), percentage=10)
+        >>> dataloader = torch.utils.data.DataLoader(cifar10_subsample, batch_size=32, shuffle=True, num_workers=2)
+    """
+
+    def __init__(self, root, train=True, transform=None, percentage=10, download=True, seed=None):
+        self.cifar_dataset = torchvision.datasets.CIFAR10(
+            root=root, train=train, transform=transform, download=download
+        )
+
+        random.seed(seed)
+        num_samples = int(len(self.cifar_dataset) * percentage / 100)
+        self.indices = random.sample(range(len(self.cifar_dataset)), num_samples)
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, index):
+        return self.cifar_dataset[self.indices[index]]
+
+    def __init__(self, root, train=True, transform=None, percentage=10, download=True, seed=None,
+                 class_proportions=None):
+        self.cifar_dataset = torchvision.datasets.CIFAR10(
+            root=root, train=train, transform=transform, download=download
+        )
+
+        self.class_labels = {
+            0: 'airplane', 1: 'automobile', 2: 'bird', 3: 'cat', 4: 'deer',
+            5: 'dog', 6: 'frog', 7: 'horse', 8: 'ship', 9: 'truck'
+        }
+        self.reverse_class_labels = {v: k for k, v in self.class_labels.items()}
+
+        random.seed(seed)
+        num_samples = int(len(self.cifar_dataset) * percentage / 100)
+
+        if class_proportions is not None:
+            self.indices = self._get_proportional_indices(class_proportions, num_samples)
+        else:
+            self.indices = random.sample(range(len(self.cifar_dataset)), num_samples)
+
+    def _get_proportional_indices(self, class_proportions, num_samples):
+        class_counts = {k: int(num_samples * v) for k, v in class_proportions.items()}
+        indices_by_class = {k: [] for k in self.reverse_class_labels.values()}
+
+        for i, (_, label) in enumerate(self.cifar_dataset):
+            indices_by_class[label].append(i)
+
+        proportional_indices = []
+        for class_name, count in class_counts.items():
+            class_idx = self.reverse_class_labels[class_name]
+            proportional_indices += random.sample(indices_by_class[class_idx], count)
+
+        random.shuffle(proportional_indices)
+        return proportional_indices
+
+
+def class_distribution_df(cifar10_subsample: CIFAR10Subsample) -> pd.DataFrame:
+    """
+    Create a DataFrame containing class counts for a CIFAR10Subsample dataset.
+
+    Args:
+        cifar10_subsample (CIFAR10Subsample): A CIFAR10Subsample dataset.
+
+    Returns:
+        pd.DataFrame: A DataFrame with columns "Class" and "Count".
+    """
+
+    class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+
+    # Count the occurrences of each class in the dataset
+    class_counts = Counter([cifar10_subsample[i][1] for i in range(len(cifar10_subsample))])
+
+    # Replace the numeric class labels with class names
+    class_counts_with_names = {class_names[k]: v for k, v in class_counts.items()}
+
+    # Convert the class counts to a DataFrame
+    class_counts_df = pd.DataFrame(list(class_counts_with_names.items()), columns=["Class", "Count"]).sort_values(
+        "Class")
+
+    return class_counts_df
+
+
+def bar_chart_classes(df):
+    """
+    Create a bar chart for all the classes of the CIFAR10Subsample object
+    :param df:
+    :return:
+    """
+    fig, ax = plt.subplots()
+    ax.bar(df["Class"], df["Count"])
+    ax.set_xlabel("Class")
+    ax.set_ylabel("Count")
+    ax.set_title("Class Distribution")
+
+    # Rotate the class labels 45 degrees
+    plt.xticks(rotation=45)
+
+    return fig
+
+
+# Define a callback function to update the progress bar
+def update_progress(progress_bar, progress):
+    progress_bar.progress(progress)
+
+
+def train_base_cifar_model():
+    """
+    Trains the base CIFAR-10 model using the full CIFAR-10 dataset and stores the model, its accuracy,
+    and per-class accuracy in the Streamlit session state. Displays the training progress and accuracy
+    in the Streamlit app.
+    """
+    cifar_net = Net()
+    cifar_net.to(device)
+
+    # Display a message while the model is being trained
+    training_message = st.empty()
+    training_message.text("Training base CIFAR-10 model...")
+
+    # Create a progress bar
+    progress_bar = st.progress(0)
+
+    st.session_state.cifar_net = Net()
+    st.session_state.cifar_net.to(device)
+    train(st.session_state.cifar_net, trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001,
+          momentum=0.9, progress_callback=update_progress, progress_bar=progress_bar)
+
+    # Remove the progress bar after training is complete
+    progress_bar.empty()
+
+    # Clear the message and display the results
+    training_message.empty()
+
+    st.session_state.cifar_net_accuracy = calculate_accuracy(st.session_state.cifar_net, testloader, device)
+    st.session_state.cifar_net_per_class_accuracy = calculate_per_class_accuracy(st.session_state.cifar_net, testloader,
+                                                                                 device,
+                                                                                 num_classes)
+
+    st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy:.2f}%")
+
+
+@st.cache_resource
+def load_cifar10(percentage=10, cat_proportion=0.1):
+    """
+
+    :param percentage:
+    :param cat_proportion:
+    :return:
+    """
+
+    def normalize_class_proportions(class_proportions, target_class, new_proportion):
+        """
+
+        :param class_proportions:
+        :param target_class:
+        :param new_proportion:
+        :return:
+        """
+        adjusted_proportions = class_proportions.copy()
+        adjusted_proportions[target_class] = new_proportion
+
+        sum_proportions = sum(adjusted_proportions.values())
+        normalized_proportions = {key: value / sum_proportions for key, value in adjusted_proportions.items()}
+
+        return normalized_proportions
+
+
+    transform = transforms.Compose(
+        [transforms.ToTensor(),
+         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
+    class_proportions = {'airplane': 0.1,
+                         'automobile': 0.1,
+                         'bird': 0.1,
+                         'cat': cat_proportion,  # Pass the cat_proportion here
+                         'deer': 0.1,
+                         'dog': 0.1,
+                         'frog': 0.1,
+                         'horse': 0.1,
+                         'ship': 0.1,
+                         'truck': 0.1
+                         }
+
+    # Normalize the class proportions based on the new cat_proportion
+    normalized_proportions = normalize_class_proportions(class_proportions, 'cat', cat_proportion)
+
+    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
+
+    trainset = CIFAR10Subsample(root='./data', train=True, transform=transform, percentage=percentage,
+                                class_proportions=class_proportions)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=0)
+
+    return trainset, trainloader, testset, testloader
+
+
+st.markdown("# Synthetic Diffusion")
+st.markdown("## What's it all about")
+st.markdown("""Welcome to this demonstration of using advanced techniques in artificial intelligence to generate 
+synthetic data for practical applications in data science. In this project, we'll be showcasing the power of Stable 
+Diffusion to generate synthetic data for a Convolutional Neural Network (CNN) image classification problem. By 
+augmenting our training data with synthetic images, we aim to improve the classification accuracy of the model. We've 
+chosen the CIFAR-10 dataset for this demonstration as it's lightweight and well-suited for our purposes. The CIFAR-10 
+dataset is widely recognized in the computer vision community, making it an ideal choice to demonstrate the 
+effectiveness of using synthetic data generated by Stable Diffusion.""")
+
+st.markdown("## CIFAR-10")
+st.markdown(" Let's take a look at the CIFAR-10 dataset")
+# Load the image using PIL
+image_path = 'C:\\Users\\andre\\Projects\\syntheticDiffusion\\figures\\cifar10.png'
+image = Image.open(image_path)
+
+# Display the image using Streamlit
+st.image(image, caption='CIFAR-10 dataset example', use_column_width=True)
+
+st.markdown("## Methods")
+st.markdown("""
+The process we'll be following consists of three main steps:
+
+1. **Synthetic Data Generation**: We'll begin by generating a synthetic dataset of cat images using Stable Diffusion, 
+a powerful technique for creating realistic images that closely resemble their real-world counterparts. 
+
+2. **Data Transformation**: After obtaining the synthetic cat dataset, we'll transform it to match the format of the 
+CIFAR-10 dataset. This ensures that our CNN model can seamlessly process the synthetic data in conjunction with the 
+original dataset. 
+
+3. **Subsampling CIFAR-10**: To emphasize the impact of adding synthetic data to our model, we'll subsample the 
+CIFAR-10 dataset, working with a smaller number of images than typically used. This simulates a situation where 
+limited data is available, and the addition of synthetic images can provide a significant boost in classification 
+performance.
+
+By following these steps, we aim to demonstrate the potential benefits of incorporating synthetic data generated 
+using Stable Diffusion into a CNN model for image classification. This demonstration will showcase the practical 
+implications of using synthetic data to improve model performance in real-world applications.""")
+
+st.markdown("""
+Having generated a collection of realistic looking cat images we have to transform the format to match that of the
+CIFAR-10 dataset. The most important change is that we have to downsample our 512x512 images to 32x32""")
+
+# Load the image using PIL
+image_path = 'C:\\Users\\andre\\Projects\\syntheticDiffusion\\figures\\cat_to_cat.png'
+image = Image.open(image_path)
+
+# Display the image using Streamlit
+st.image(image, caption='Resize of synthetic cat images to CIFAR-10 format', use_column_width=True)
+
+
 # Define some global variables
 
-synthetic_imgDir = "D:\\Projects\\synthetic_diffusion\\data\\cats"
+synthetic_imgDir = "C:\\Users\\andre\\Projects\\syntheticDiffusion\\data\\synthetic_cats\\"
 
 # These are the classes in the cifar-10 dataset (in proper order)
 classes = ('plane', 'car', 'bird', 'cat',
-           'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+           'deer', 'dog', 'frog', 'horse', 'ship', 'truck')  # TODO: do I still need this?
 
 batch_size = 16
+num_classes = 10
+epochs = 30
+cifar_percentage = 10
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'  # If gpu exists use cuda
 
 # Load and transform synthetic images
 
 custom_images = load_and_transform_images(synthetic_imgDir)
-custom_labels = len(custom_images)*[3]  # Your assigned labels(cat)
+custom_labels = len(custom_images) * [3]  # Your assigned labels(cat)
 
-# Cache the dataset loading
-@st.cache_resource
-def load_cifar10():
-    transform = transforms.Compose(
-        [transforms.ToTensor(),
-         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
 
-    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
+# Let's take a look at the distribution of classes in our CIFAR-10 subsample
+st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
+class_counts_df = class_distribution_df(trainset)
+fig = bar_chart_classes(class_counts_df)
+st.pyplot(fig)
+# st.bar_chart(class_counts_df.set_index("Class"))  # This is the previous version of the bar chart, which I like better but I don't know if it's possible to rotate the class labels
 
-    trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False, num_workers=0)
+# Create a button to decrease cat samples
 
-    return trainset, trainloader, testset, testloader
+# # If the button is pressed, show the slider and store its value in the session state
+# st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
+# cat_proportion = st.slider("Proportion of cat images:", min_value=0.0, max_value=0.1, value=0.05, step=0.01)
+# st.session_state.cat_proportion = cat_proportion
+#
+# # If the session state has a cat_proportion, use it to load the data and display the chart
+# if "cat_proportion" in st.session_state:
+#     trainset, trainloader, testset, testloader = load_cifar10(percentage=10, cat_proportion=st.session_state.cat_proportion)
+#
+#     st.markdown("Let's take a look at the distribution of classes for our subsampled dataset now")
+#     class_counts_df = class_distribution_df(trainset)
+#     fig = bar_chart_classes(class_counts_df)
+#     st.pyplot(fig)
+
+st.markdown("# DUMMY")
+from bokeh.models import ColumnDataSource, CustomJS, Slider
+from bokeh.plotting import figure
+from bokeh.layouts import column
 
 
-trainset, trainloader, testset, testloader = load_cifar10()
+def interactive_bar_chart(class_labels, initial_proportions):
+    # Create a DataFrame with the class labels and initial proportions
+    data = pd.DataFrame({"classes": class_labels, "proportions": initial_proportions})
+
+    # Create a ColumnDataSource from the DataFrame
+    source = ColumnDataSource(data)
+
+    # Create the interactive bar chart
+    plot = figure(x_range=class_labels, height=500, title="Class Proportions")
+    plot.vbar(x="classes", top="proportions", width=0.9, source=source)
+    plot.y_range.start = 0
+    plot.xgrid.grid_line_color = None
+    plot.xaxis.axis_label = "Classes"
+    plot.yaxis.axis_label = "Proportions"
+
+    # Create a slider for the cat class
+    slider = Slider(start=0, end=0.1, value=0.1, step=0.01, title="Proportion of cat images")
+
+    # Update the callback to store the current class proportions in the session state
+    callback = CustomJS(args=dict(source=source, slider=slider), code="""
+        const data = source.data;
+        const cat_proportion = slider.value;
+
+        // Calculate the sum of the proportions of other classes
+        const other_classes_sum = data["proportions"].reduce((sum, value, index) => {
+            return sum + (data["classes"][index] === "cat" ? 0 : value);
+        }, 0);
+
+        for (let i = 0; i < data["classes"].length; i++) {
+            if (data["classes"][i] === "cat") {
+                data["proportions"][i] = cat_proportion;
+            } else {
+                data["proportions"][i] = data["proportions"][i] * (1 - cat_proportion) / other_classes_sum;
+            }
+        }
+        source.change.emit();
+
+        // Store the current class proportions in the session state and trigger a re-run
+        streamlit.setSessionState({class_proportions: data["proportions"], rerun: true});
+    """)
+
+    # Assign the callback to the slider
+    slider.js_on_change("value", callback)
+
+    # Display the interactive bar chart and the slider using Bokeh
+    st.bokeh_chart(column(slider, plot))
+
+class_labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+initial_proportions = [0.1] * 10
+
+interactive_bar_chart(class_labels, initial_proportions)
+
+# Check if the current class proportions are available in the session state
+if "class_proportions" in st.session_state:
+# Convert the current class proportions to a dictionary (replace with your actual class labels)
+    current_class_proportions = dict(zip(class_labels, st.session_state.class_proportions))
+
+    # Reload the dataset and display other visualizations using the current class proportions
+    trainset, trainloader, testset, testloader = load_cifar10(percentage=10,
+                                                              class_proportions=current_class_proportions)
+
+    # Display any other visualizations or information related to the dataset
+    # ...
+
+    # Reset the 'rerun' flag in the session state after the app has re-run
+    if "rerun" in st.session_state and st.session_state.rerun:
+        st.session_state.rerun = False
+
+if st.button('show cat class length for debugging'):
+    # Let's take a look at the distribution of classes in our CIFAR-10 subsample
+    st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
+    class_counts_df = class_distribution_df(trainset)
+    fig = bar_chart_classes(class_counts_df)
+    st.pyplot(fig)
+
+st.markdown("# End of DUMMY")
+
+# Create a button for triggering the training process for base cifar-10 model
+if st.button('Train CIFAR-10 base model'):
+    train_base_cifar_model()
 
 # ... (Load and transform synthetic images)
 custom_images = load_and_transform_images(synthetic_imgDir)
-custom_labels = len(custom_images)*[3]  # Your assigned labels(cat)
+custom_labels = len(custom_images) * [3]  # Your assigned labels(cat)
 
 # Define slider for selecting number of custom images to add
-num_custom_images = st.slider('Select number of custom images to add to dataset', 0, len(custom_images), step=10)
+st.markdown("""To further illustrate the performance increase that we get when we add more of our synthetic images
+you can adjust the number of our synthetic cats you want to add to the CIFAR-10 dataset""")
+#num_custom_images = st.slider('Select number of custom images to add to dataset', 0, len(custom_images), step=10)
+num_custom_images = st.number_input(f"Select the number of custom images to add to dataset (max{len(custom_images)})",
+                                    min_value=0,
+                                    max_value=len(custom_images), step=10)
 
 # Normalize CIFAR-10 images
-cfar_images = [cfar_transform(cfar_image) for cfar_image in trainset.data]
+cfar_images = [trainset[i][0] for i in range(len(trainset))]
 cfar_images = torch.stack(cfar_images)
 
 # Concatenate our synthetic images with CIFAR-10 images
 custom_train_images = torch.cat((cfar_images, custom_images[:num_custom_images]), dim=0)
-custom_train_labels = trainset.targets + custom_labels[:num_custom_images]
+
+# Extract targets from the CIFAR-10 Subsample
+cfar_targets = [trainset[i][1] for i in range(len(trainset))]
+custom_train_labels = cfar_targets + custom_labels[:num_custom_images]
 
 # Create a custom dataloader for our new combined dataset
 custom_trainset = CustomDataset(custom_train_images, custom_train_labels)
@@ -345,50 +728,40 @@ if 'prev_custom_net_accuracy' not in st.session_state:
 if 'prev_custom_net_per_class_accuracy' not in st.session_state:
     st.session_state.prev_custom_net_per_class_accuracy = None
 
-# Initialize variables to store the trained cifar_net in the session state
-if 'cifar_net' not in st.session_state:
-    st.session_state.cifar_net = None
-
 # Create a button for triggering the training process
-if st.button('Train the models'):
+if st.button('Train synthetically enhanced model'):
 
-    # Display a message while the model is being trained
-    training_message = st.empty()
-    training_message.text("Training models...")
-
-    # Create two instances of your model
+    # Createinstance of your model
     custom_net = Net()
     custom_net.to(device)
 
-    cifar_net = Net()
-    cifar_net.to(device)
+    # Display a message while the model is being trained
+    training_message = st.empty()
+    training_message.text("Training custom model...")
+
+    # Create a progress bar
+    progress_bar = st.progress(0)
 
     # Train the networks using the custom and CIFAR-10 dataloaders
-    train(custom_net, custom_trainloader, device, epochs=5, print_every=4000, learning_rate=0.001, momentum=0.9)
+    train(custom_net, custom_trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001, momentum=0.9,
+          progress_callback=update_progress, progress_bar=progress_bar)
 
-    # Train the cifar_net only if it hasn't been trained yet
-    if st.session_state.cifar_net is None:
-        st.session_state.cifar_net = Net()
-        st.session_state.cifar_net.to(device)
-        train(st.session_state.cifar_net, trainloader, device, epochs=5, print_every=4000, learning_rate=0.001, momentum=0.9)
-
+    # Remove the progress bar after training is complete
+    progress_bar.empty()
 
     # Clear the message and display the results
     training_message.empty()
 
     # Calculate overall accuracy
     custom_net_accuracy = calculate_accuracy(custom_net, testloader, device)
-    cifar_net_accuracy = calculate_accuracy(st.session_state.cifar_net, testloader, device)
 
     # Calculate per-class accuracy
-    num_classes = 10
     custom_net_per_class_accuracy = calculate_per_class_accuracy(custom_net, testloader, device, num_classes)
-    cifar_net_per_class_accuracy = calculate_per_class_accuracy(st.session_state.cifar_net, testloader, device, num_classes)
 
     # Display overall accuracy
     st.subheader("Overall Model Accuracy")
     st.write(f"Custom model accuracy: {custom_net_accuracy:.2f}%")
-    st.write(f"CIFAR-10 model accuracy: {cifar_net_accuracy:.2f}%")
+    # st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy:.2f}%")
 
     # Plot per-class accuracy
     st.subheader("Per-class Model Accuracy")
@@ -397,8 +770,8 @@ if st.button('Train the models'):
     width = 0.35
 
     fig, ax = plt.subplots()
-    rects1 = ax.bar(x - width/2, custom_net_per_class_accuracy, width, label='Custom Model')
-    rects2 = ax.bar(x + width/2, cifar_net_per_class_accuracy, width, label='CIFAR-10 Model')
+    rects1 = ax.bar(x - width / 2, custom_net_per_class_accuracy, width, label='Custom Model')
+    rects2 = ax.bar(x + width / 2, st.session_state.cifar_net_per_class_accuracy, width, label='CIFAR-10 Model')
 
     ax.set_ylabel('Accuracy')
     ax.set_title('Per-class Accuracy')
@@ -418,6 +791,7 @@ if st.button('Train the models'):
                         ha='center', va='bottom',
                         rotation=75)  # Rotate the text by 45 degrees
 
+
     autolabel(rects1)
     autolabel(rects2)
 
@@ -433,8 +807,9 @@ if st.button('Train the models'):
 
         # Plot per-class accuracy comparison
         fig2, ax2 = plt.subplots()
-        rects3 = ax2.bar(x - width/2, st.session_state.prev_custom_net_per_class_accuracy, width, label='Previous Custom Model')
-        rects4 = ax2.bar(x + width/2, custom_net_per_class_accuracy, width, label='New Custom Model')
+        rects3 = ax2.bar(x - width / 2, st.session_state.prev_custom_net_per_class_accuracy, width,
+                         label='Previous Custom Model')
+        rects4 = ax2.bar(x + width / 2, custom_net_per_class_accuracy, width, label='New Custom Model')
 
         ax2.set_ylabel('Accuracy')
         ax2.set_title('Per-class Accuracy Comparison')
@@ -453,10 +828,7 @@ if st.button('Train the models'):
     st.session_state.prev_custom_net_accuracy = custom_net_accuracy
     st.session_state.prev_custom_net_per_class_accuracy = custom_net_per_class_accuracy
 
-
-# TODO: Create new images
 # TODO: Add some image interactivity
-# TODO: Save synthetic images in cifar format to allow for creation of git repo
 # TODO: more optimization of NN architecture?
 # TODO: See how easy it would be to save the cifar NN to avoid retraining it all the time
 # TODO: split this project up into a few files and use imports to clean it up

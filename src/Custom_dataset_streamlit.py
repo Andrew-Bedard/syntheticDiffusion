@@ -5,18 +5,30 @@ import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 
-from data.data_utils import cfar_transform, load_and_transform_images, subsample_dataset, CustomDataset
+from data.data_utils import cfar_transform, load_and_transform_images, subsample_dataset, CustomDataset, CustomCifar
 from model.model import Net, train, calculate_accuracy, calculate_per_class_accuracy
 from viewer.visualization_utils import imshow
 
-
 # Define some global variables
 torch.manual_seed(0)
-synthetic_imgDir = "D:\\Projects\\synthetic_diffusion\\data\\cats"
+synthetic_imgDir = "D:\\Projects\\syntheticDiffusion\\data\\synthetic_cats"
 
 # These are the classes in the cifar-10 dataset (in proper order)
 classes = ('plane', 'car', 'bird', 'cat',
            'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+
+percentage_per_class_dict = {
+    'plane': 0.25,
+    'car': 0.30,
+    'bird': 0.20,
+    'cat': 0.05,
+    'deer': 0.20,
+    'dog': 0.25,
+    'frog': 0.30,
+    'horse': 0.20,
+    'ship': 0.25,
+    'truck': 0.30
+}
 
 batch_size = 16
 
@@ -29,39 +41,70 @@ custom_labels = len(custom_images)*[3]  # Your assigned labels(cat)
 
 # Cache the dataset loading
 @st.cache_resource
-def load_cifar10():
+def load_cifar10(percentage_per_class_dict=None):
+    """
+    Load the CIFAR-10 dataset and create DataLoaders for the training and testing sets.
+    Optionally, subsample the training set based on the percentage of each class specified in the input dictionary.
+
+    Args:
+        percentage_per_class_dict (dict, optional): A dictionary with class labels as keys and the percentage
+                                                   of samples to select per class as values. If None, the entire
+                                                   training set will be used. Default is None.
+
+    Returns:
+        trainset (torchvision.datasets.CIFAR10): The training set (original or subsampled, depending on the input).
+        trainloader (torch.utils.data.DataLoader): A DataLoader for the training set.
+        testset (torchvision.datasets.CIFAR10): The testing set.
+        testloader (torch.utils.data.DataLoader): A DataLoader for the testing set.
+    """
+    # CIFAR-10 class labels to indices mapping
+    class_labels = {'plane': 0, 'car': 1, 'bird': 2, 'cat': 3, 'deer': 4, 'dog': 5, 'frog': 6, 'horse': 7, 'ship': 8, 'truck': 9}
+
+    # transform = transforms.Compose(
+    #     [transforms.ToTensor(),
+    #      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
     transform = transforms.Compose(
-        [transforms.ToTensor(),
+        [transforms.RandomHorizontalFlip(),
+         transforms.RandomCrop(32, padding=4),
+         transforms.ToTensor(),
          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
 
-    trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+    trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=None)
+
+    # Subsample the dataset based on the percentage_per_class_dict
+    if percentage_per_class_dict:
+        percentage_list = [percentage_per_class_dict.get(class_label, 0) for class_label in class_labels.keys()]
+        subsampled_images, subsampled_labels = subsample_dataset(trainset, percentage_list)
+        trainset = CustomDataset(subsampled_images, subsampled_labels)
+
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False, num_workers=0)
 
     return trainset, trainloader, testset, testloader
 
 
-trainset, trainloader, testset, testloader = load_cifar10()
+trainset, trainloader, testset, testloader = load_cifar10(percentage_per_class_dict)
 
 # ... (Load and transform synthetic images)
 custom_images = load_and_transform_images(synthetic_imgDir)
 custom_labels = len(custom_images)*[3]  # Your assigned labels(cat)
 
 # Define slider for selecting number of custom images to add
-num_custom_images = st.slider('Select number of custom images to add to dataset', 0, len(custom_images), step=10)
+num_custom_images = st.slider('Select number of custom images to add to dataset', 0, len(custom_images), step=50)
 
 # Normalize CIFAR-10 images
-cfar_images = [cfar_transform(cfar_image) for cfar_image in trainset.data]
+cfar_images = [cfar_transform(image) for image, _ in trainset]
 cfar_images = torch.stack(cfar_images)
 
 # Concatenate our synthetic images with CIFAR-10 images
 custom_train_images = torch.cat((cfar_images, custom_images[:num_custom_images]), dim=0)
-custom_train_labels = trainset.targets + custom_labels[:num_custom_images]
+custom_train_labels = trainset.labels + custom_labels[:num_custom_images]
 
 # Create a custom dataloader for our new combined dataset
-custom_trainset = CustomDataset(custom_train_images, custom_train_labels)
+custom_trainset = CustomCifar(custom_train_images, custom_train_labels)
 custom_trainloader = torch.utils.data.DataLoader(custom_trainset, batch_size=batch_size,
                                                  shuffle=True, num_workers=0)
 
@@ -91,13 +134,13 @@ if st.button('Train models'):
     cifar_net.to(device)
 
     # Train the networks using the custom and CIFAR-10 dataloaders
-    train(custom_net, custom_trainloader, device, epochs=5, print_every=4000, learning_rate=0.001, momentum=0.9)
+    train(custom_net, custom_trainloader, device, epochs=30, print_every=4000, learning_rate=0.001, momentum=0.9)
 
     # Train the cifar_net only if it hasn't been trained yet
     if st.session_state.cifar_net is None:
         st.session_state.cifar_net = Net()
         st.session_state.cifar_net.to(device)
-        train(st.session_state.cifar_net, trainloader, device, epochs=5, print_every=4000, learning_rate=0.001, momentum=0.9)
+        train(st.session_state.cifar_net, trainloader, device, epochs=30, print_every=4000, learning_rate=0.001, momentum=0.9)
 
 
     # Clear the message and display the results

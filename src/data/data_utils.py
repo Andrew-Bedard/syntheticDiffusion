@@ -130,53 +130,38 @@ def cfar_transform(cfar_img):
 
     return (transform(cfar_img))
 
-def load_and_transform_images(img_dir):
+
+def subsample_dataset(dataset, percentage_per_class_dict):
     """
-    Loads and transforms images from a specified directory.
+    Subsample the given dataset based on the percentage_per_class_dict.
 
     Args:
-        img_dir (str): The directory containing the images.
+        dataset (torchvision.datasets.CIFAR10): The original dataset to subsample.
+        percentage_per_class_dict (dict): A dictionary with class indices as keys and the percentage
+                                          of samples to select per class as values.
 
     Returns:
-        torch.Tensor: A tensor containing the processed images.
+        subsampled_images (list): List of subsampled image data.
+        subsampled_labels (list): List of subsampled image labels.
     """
-    # Get a list of the image paths
-    img_paths = [os.path.join(img_dir, f) for f in os.listdir(img_dir) if f.endswith('.png')]
 
-    # Process each image and store the result in a list
-    new_images = [resize_normalize(img_path) for img_path in img_paths]
+    # Calculate the maximum number of samples per class based on the percentage_per_class_dict
+    max_counts = np.array(
+        [int(len([label for _, label in dataset if label == i]) * percentage_per_class_dict[i]) for i in range(10)])
 
-    # Convert the list of images to a tensor
-    new_images = torch.stack(new_images)
+    # Initialize an array to keep track of the current count of samples per class
+    counts = np.zeros(10, dtype=int)
 
-    return new_images
+    # Iterate through the dataset and add samples to the subsampled_data list if the count for that class has not reached its maximum
+    subsampled_data = [(img, label) for img, label in dataset if counts[label] < max_counts[label]]
+    counts = [counts[i] + 1 for i in range(10) if counts[i] < max_counts[i]]
 
-def subsample_dataset(dataset, percentage_per_class):
-    """
-    Subsample the CIFAR-10 dataset based on the percentage of each class.
+    # Separate the images and labels from the subsampled_data list
+    subsampled_images = [img for img, label in subsampled_data]
+    subsampled_labels = [label for img, label in subsampled_data]
 
-    Args:
-        dataset (torchvision.datasets.CIFAR10): The CIFAR-10 dataset.
-        percentage_per_class (list): A list of percentages representing the portion of samples to select per class.
-    Returns:
-        subsampled_data (list): A list of tuples containing the subsampled images and their corresponding labels.
-    """
-    assert len(percentage_per_class) == 10, "percentage_per_class list should have 10 elements"
+    return subsampled_images, subsampled_labels
 
-    class_counts = np.zeros(10, dtype=int)
-    max_counts = np.array([int(len([label for _, label in dataset if label == i]) * percentage) for i, percentage in enumerate(percentage_per_class)])
-
-    subsampled_data = []
-
-    for image, label in dataset:
-        if class_counts[label] < max_counts[label]:
-            subsampled_data.append((image, label))
-            class_counts[label] += 1
-
-        if all(class_counts >= max_counts):
-            break
-
-    return subsampled_data
 
 class CustomDataset(torch.utils.data.Dataset):
     """
@@ -224,3 +209,23 @@ class CustomDataset(torch.utils.data.Dataset):
             int: The total number of images in the dataset.
         """
         return len(self.images)
+
+class CustomCifar(torch.utils.data.Dataset):
+    def __init__(self, data, transform=None):
+        self.data = data
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        image, label = self.data[idx], self.targets[idx]  # Use self.targets instead of self.labels
+        if self.transform:
+            image = self.transform(image)
+        return image, label
+
+    @property
+    def targets(self):
+        return [entry[1] for entry in self.data]  # Assuming label is at index 1
+
+
