@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 
-from data.data_utils import cfar_transform, load_and_transform_images, subsample_dataset, CustomDataset
+from data.data_utils import cfar_transform, load_and_transform_images, subsample_dataset, CustomDataset, CustomCifar
 from model.model import Net, train, calculate_accuracy, calculate_per_class_accuracy
 from viewer.visualization_utils import imshow
 
@@ -104,7 +104,7 @@ custom_train_images = torch.cat((cfar_images, custom_images[:num_custom_images])
 custom_train_labels = trainset.labels + custom_labels[:num_custom_images]
 
 # Create a custom dataloader for our new combined dataset
-custom_trainset = CustomDataset(custom_train_images, custom_train_labels)
+custom_trainset = CustomCifar(custom_train_images, custom_train_labels)
 custom_trainloader = torch.utils.data.DataLoader(custom_trainset, batch_size=batch_size,
                                                  shuffle=True, num_workers=0)
 
@@ -134,13 +134,13 @@ if st.button('Train models'):
     cifar_net.to(device)
 
     # Train the networks using the custom and CIFAR-10 dataloaders
-    train(custom_net, custom_trainloader, device, epochs=5, print_every=4000, learning_rate=0.001, momentum=0.9)
+    train(custom_net, custom_trainloader, device, epochs=30, print_every=4000, learning_rate=0.001, momentum=0.9)
 
     # Train the cifar_net only if it hasn't been trained yet
     if st.session_state.cifar_net is None:
         st.session_state.cifar_net = Net()
         st.session_state.cifar_net.to(device)
-        train(st.session_state.cifar_net, trainloader, device, epochs=5, print_every=4000, learning_rate=0.001, momentum=0.9)
+        train(st.session_state.cifar_net, trainloader, device, epochs=30, print_every=4000, learning_rate=0.001, momentum=0.9)
 
 
     # Clear the message and display the results

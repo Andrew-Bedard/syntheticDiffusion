@@ -219,11 +219,13 @@ class CustomCifar(torch.utils.data.Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        image, label = self.data[idx], self.labels[idx]
+        image, label = self.data[idx], self.targets[idx]  # Use self.targets instead of self.labels
         if self.transform:
             image = self.transform(image)
         return image, label
 
     @property
     def targets(self):
-        return [label for _, label in self.data]
+        return [entry[1] for entry in self.data]  # Assuming label is at index 1
+
+
