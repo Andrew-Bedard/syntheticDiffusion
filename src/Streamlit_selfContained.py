@@ -12,6 +12,7 @@ import streamlit as st
 import random
 import pandas as pd
 from collections import Counter
+from sklearn.metrics import confusion_matrix
 
 torch.manual_seed(0)
 
@@ -93,36 +94,113 @@ def train(net, model_trainloader, device, epochs=4, print_every=2000, learning_r
     print('Finished Training')
 
 
-def calculate_accuracy(model, dataloader, device):
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for data in dataloader:
-            images, labels = data
-            images, labels = images.to(device), labels.to(device)
-            outputs = model(images)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-    return 100 * correct / total
+def plot_metrics(metrics_history):
+    """
+    Plots the performance metrics (accuracy, precision, recall, and F1 score) against the percentage
+    of supplementary data added to the original dataset.
+
+    Args:
+        metrics_history (list): A list of dictionaries containing the performance metrics at each
+                                step of dataset augmentation. Each dictionary should have the keys:
+                                'accuracy', 'precision', 'recall', and 'f1_score'.
+
+    """
+    percentages = [0, 25, 50, 75, 100]
+    plt.figure(figsize=(12, 8))
+
+    # Plot total accuracy
+    plt.plot(percentages, [metrics['accuracy'] for metrics in metrics_history], label='Accuracy')
+
+    # Plot average per-class metrics
+    plt.plot(percentages, [sum(metrics['precision']) / len(metrics['precision']) for metrics in metrics_history], label='Precision')
+    plt.plot(percentages, [sum(metrics['recall']) / len(metrics['recall']) for metrics in metrics_history], label='Recall')
+    plt.plot(percentages, [sum(metrics['f1_score']) / len(metrics['f1_score']) for metrics in metrics_history], label='F1 Score')
+
+    plt.xlabel('Percentage of Supplementary Data Added')
+    plt.ylabel('Metric Value')
+    plt.title('Model Performance Metrics vs. Supplementary Data Added')
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+# def calculate_accuracy(model, dataloader, device):
+#     correct = 0
+#     total = 0
+#     with torch.no_grad():
+#         for data in dataloader:
+#             images, labels = data
+#             images, labels = images.to(device), labels.to(device)
+#             outputs = model(images)
+#             _, predicted = torch.max(outputs.data, 1)
+#             total += labels.size(0)
+#             correct += (predicted == labels).sum().item()
+#     return 100 * correct / total
+#
+#
+# def calculate_per_class_accuracy(model, dataloader, device, num_classes):
+#     class_correct = list(0. for i in range(num_classes))
+#     class_total = list(0. for i in range(num_classes))
+#     with torch.no_grad():
+#         for data in dataloader:
+#             images, labels = data
+#             images, labels = images.to(device), labels.to(device)
+#             outputs = model(images)
+#             _, predicted = torch.max(outputs, 1)
+#             c = (predicted == labels).squeeze()
+#             for i in range(len(labels)):
+#                 label = labels[i]
+#                 class_correct[label] += c[i].item()
+#                 class_total[label] += 1
+#     per_class_accuracy = [100 * class_correct[i] / class_total[i] for i in range(num_classes)]
+#     return per_class_accuracy
 
 
-def calculate_per_class_accuracy(model, dataloader, device, num_classes):
-    class_correct = list(0. for i in range(num_classes))
-    class_total = list(0. for i in range(num_classes))
+def calculate_metrics(model, dataloader, device, num_classes=10):
+    """
+    Computes accuracy, per-class accuracy, precision, recall, and F1 score for a given model and dataset.
+
+    Args:
+        model (torch.nn.Module): The trained PyTorch model for evaluation.
+        dataloader (torch.utils.data.DataLoader): The DataLoader containing the dataset to evaluate.
+        device (torch.device): The device (CPU or GPU) on which to perform the evaluation.
+        num_classes (int): The number of classes in the classification problem.
+
+    Returns:
+        dict: A dictionary containing the following keys and their corresponding values:
+              - 'accuracy': Total accuracy.
+              - 'per_class_accuracy': A list with per-class accuracy.
+              - 'precision': A list with per-class precision.
+              - 'recall': A list with per-class recall.
+              - 'f1_score': A list with per-class F1 score.
+    """
+
+    y_true = []
+    y_pred = []
     with torch.no_grad():
         for data in dataloader:
             images, labels = data
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
             _, predicted = torch.max(outputs, 1)
-            c = (predicted == labels).squeeze()
-            for i in range(len(labels)):
-                label = labels[i]
-                class_correct[label] += c[i].item()
-                class_total[label] += 1
-    per_class_accuracy = [100 * class_correct[i] / class_total[i] for i in range(num_classes)]
-    return per_class_accuracy
+            y_true.extend(labels.cpu().numpy())
+            y_pred.extend(predicted.cpu().numpy())
+
+    cm = confusion_matrix(y_true, y_pred, labels=list(range(num_classes)))
+    precision = [cm[i, i] / sum(cm[:, i]) for i in range(num_classes)]
+    recall = [cm[i, i] / sum(cm[i, :]) for i in range(num_classes)]
+    f1_score = [2 * (precision[i] * recall[i]) / (precision[i] + recall[i]) for i in range(num_classes)]
+
+    total_accuracy = sum([cm[i, i] for i in range(num_classes)]) / sum(sum(cm))
+
+    metrics = {
+        'accuracy': total_accuracy,
+        'per_class_accuracy': [cm[i, i] / sum(cm[i, :]) for i in range(num_classes)],
+        'precision': precision,
+        'recall': recall,
+        'f1_score': f1_score
+    }
+
+    return metrics
 
 
 def resize_normalize(img_path, resize=False):
@@ -446,13 +524,10 @@ def train_base_cifar_model():
 
     # Clear the message and display the results
     training_message.empty()
+    cifar_metrics = calculate_metrics(st.session_state.cifar_net, testloader, device)
+    st.session_state.cifar_net_accuracy = cifar_metrics['accuracy']
 
-    st.session_state.cifar_net_accuracy = calculate_accuracy(st.session_state.cifar_net, testloader, device)
-    st.session_state.cifar_net_per_class_accuracy = calculate_per_class_accuracy(st.session_state.cifar_net, testloader,
-                                                                                 device,
-                                                                                 num_classes)
-
-    st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy:.2f}%")
+    st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy*100:.2f}%")
 
 
 @st.cache_resource
@@ -752,15 +827,11 @@ if st.button('Train synthetically enhanced model'):
     # Clear the message and display the results
     training_message.empty()
 
-    # Calculate overall accuracy
-    custom_net_accuracy = calculate_accuracy(custom_net, testloader, device)
-
-    # Calculate per-class accuracy
-    custom_net_per_class_accuracy = calculate_per_class_accuracy(custom_net, testloader, device, num_classes)
+    metrics = calculate_metrics(custom_net, testloader, device, len(class_labels))
 
     # Display overall accuracy
     st.subheader("Overall Model Accuracy")
-    st.write(f"Custom model accuracy: {custom_net_accuracy:.2f}%")
+    st.write(f"Custom model accuracy: {metrics['accuracy']*100:.2f}%")
     # st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy:.2f}%")
 
     # Plot per-class accuracy
@@ -770,8 +841,8 @@ if st.button('Train synthetically enhanced model'):
     width = 0.35
 
     fig, ax = plt.subplots()
-    rects1 = ax.bar(x - width / 2, custom_net_per_class_accuracy, width, label='Custom Model')
-    rects2 = ax.bar(x + width / 2, st.session_state.cifar_net_per_class_accuracy, width, label='CIFAR-10 Model')
+    rects1 = ax.bar(x - width / 2, metrics['per_class_accuracy']*100, width, label='Custom Model')
+    rects2 = ax.bar(x + width / 2, st.session_state.cifar_net_per_class_accuracy*100, width, label='CIFAR-10 Model')
 
     ax.set_ylabel('Accuracy')
     ax.set_title('Per-class Accuracy')
@@ -802,14 +873,14 @@ if st.button('Train synthetically enhanced model'):
     # Compare the new custom model with the previous custom model if it exists
     if st.session_state.prev_custom_net_accuracy is not None:
         st.subheader("Comparison with the Previous Custom Model")
-        st.write(f"Previous custom model accuracy: {st.session_state.prev_custom_net_accuracy:.2f}%")
-        st.write(f"New custom model accuracy: {custom_net_accuracy:.2f}%")
+        st.write(f"Previous custom model accuracy: {st.session_state.prev_custom_net_accuracy*100:.2f}%")
+        st.write(f"New custom model accuracy: {metrics['accuracy']*100:.2f}%")
 
         # Plot per-class accuracy comparison
         fig2, ax2 = plt.subplots()
         rects3 = ax2.bar(x - width / 2, st.session_state.prev_custom_net_per_class_accuracy, width,
                          label='Previous Custom Model')
-        rects4 = ax2.bar(x + width / 2, custom_net_per_class_accuracy, width, label='New Custom Model')
+        rects4 = ax2.bar(x + width / 2, metrics['per_class_accuracy']*100, width, label='New Custom Model')
 
         ax2.set_ylabel('Accuracy')
         ax2.set_title('Per-class Accuracy Comparison')
@@ -825,8 +896,8 @@ if st.button('Train synthetically enhanced model'):
         st.pyplot(fig2)
 
     # Store the previous custom model's accuracies before updating the current ones
-    st.session_state.prev_custom_net_accuracy = custom_net_accuracy
-    st.session_state.prev_custom_net_per_class_accuracy = custom_net_per_class_accuracy
+    st.session_state.prev_custom_net_accuracy = metrics['accuracy']
+    st.session_state.prev_custom_net_per_class_accuracy = metrics['per_class_accuracy']
 
 # TODO: Add some image interactivity
 # TODO: more optimization of NN architecture?
