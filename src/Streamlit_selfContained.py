@@ -154,15 +154,15 @@ def calculate_metrics(model, dataloader, device, num_classes=10):
             y_pred.extend(predicted.cpu().numpy())
 
     cm = confusion_matrix(y_true, y_pred, labels=list(range(num_classes)))
-    precision = [cm[i, i] / sum(cm[:, i]) for i in range(num_classes)]
-    recall = [cm[i, i] / sum(cm[i, :]) for i in range(num_classes)]
-    f1_score = [2 * (precision[i] * recall[i]) / (precision[i] + recall[i]) for i in range(num_classes)]
-
+    precision = [cm[i, i] / sum(cm[:, i]) if sum(cm[:, i]) != 0 else 0 for i in range(num_classes)]
+    recall = [cm[i, i] / sum(cm[i, :]) if sum(cm[i, :]) != 0 else 0 for i in range(num_classes)]
+    f1_score = [2 * (precision[i] * recall[i]) / (precision[i] + recall[i]) if (precision[i] + recall[i]) != 0 else
+                0 for i in range(num_classes)]
     total_accuracy = sum([cm[i, i] for i in range(num_classes)]) / sum(sum(cm))
 
     metrics = {
         'accuracy': total_accuracy,
-        'per_class_accuracy': [cm[i, i] / sum(cm[i, :]) for i in range(num_classes)],
+        'per_class_accuracy': [cm[i, i] / sum(cm[i, :]) if sum(cm[i, :]) != 0 else 0 for i in range(num_classes)],
         'precision': precision,
         'recall': recall,
         'f1_score': f1_score
@@ -507,6 +507,32 @@ def plot_per_class_accuracy(metrics, cifar_net_per_class_accuracy, labels, model
     return fig
 
 
+def plot_single_per_class_accuracy(per_class_accuracy, labels, model_label):
+    """Plot per-class accuracy for one model and display the percentage values on the bars.
+
+    Args:
+    metrics:
+    labels: List of class labels.
+    model_label: str, colour coding for bars to indicate model
+    """
+    x = np.arange(len(labels))
+    width = 0.85
+
+    fig, ax = plt.subplots()
+    rects1 = ax.bar(x, np.array(per_class_accuracy) * 100, width, label=model_label)
+
+    autolabel(rects1, ax, rotation=65)
+
+    ax.set_ylabel('Accuracy')
+    ax.set_title('Per-class Accuracy')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=45)
+    ax.set_ylim(0, 100)
+    ax.legend()
+
+    return fig
+
+
 # Define a callback function to update the progress bar
 def update_progress(progress_bar, progress):
     progress_bar.progress(progress)
@@ -600,6 +626,18 @@ def load_cifar10(percentage=10, cat_proportion=0.1):
     return trainset, trainloader, testset, testloader
 
 
+# These are the classes in the cifar-10 dataset (in proper order)
+classes = ('plane', 'car', 'bird', 'cat',
+           'deer', 'dog', 'frog', 'horse', 'ship', 'truck')  # TODO: do I still need this?
+
+batch_size = 16
+num_classes = 10
+epochs = 30
+cifar_percentage = 10
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'  # If gpu exists use cuda
+trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
+
 def page1():
     st.title("Background")
     st.markdown("## What's it all about")
@@ -652,44 +690,195 @@ def page1():
     st.image(image, caption='Resize of synthetic cat images to CIFAR-10 format', use_column_width=True)
 
 def page2():
-    st.title("First exploration")
-    st.markdown("This is where the pre-calculations will be presented")
+    st.title("Generating Synthetic Images of cats")
+    st.markdown("")
+    st.markdown("[Stable Diffusion Web UI](https://github.com/AUTOMATIC1111/stable-diffusion-webui)", unsafe_allow_html=True)
 
 
 def page3():
+    st.title("Pre-calculated results")
 
-    synthetic_imgDir = "D:\\Projects\\syntheticDiffusion\\data\\synthetic_cats\\"
+    from torch.utils.data import Subset
+    import random
+
+    def train_cifar_model_with_percentage(percentage, trainset, trainloader, device):
+        # Find the indices of the cat images in the trainset
+        cat_indices = [i for i, (image, label) in enumerate(trainset) if
+                       label == 3]  # Assuming cat class has a label of 3
+
+        # Calculate the number of cat images to include in the subsampled dataset
+        num_cat_images = int(len(cat_indices) * (percentage / 100))
+
+        # Randomly choose the cat images to include
+        chosen_cat_indices = random.sample(cat_indices, num_cat_images)
+
+        # Find the indices of the non-cat images in the trainset
+        non_cat_indices = [i for i in range(len(trainset)) if i not in cat_indices]
+
+        # Combine the chosen cat image indices with the non-cat image indices
+        new_trainset_indices = non_cat_indices + chosen_cat_indices
+
+        # Create a new Subset with the specified percentage of cat images
+        new_trainset = Subset(trainset, new_trainset_indices)
+
+        # Create a new DataLoader with the modified trainset
+        new_trainloader = torch.utils.data.DataLoader(new_trainset, batch_size=trainloader.batch_size, shuffle=True,
+                                                      num_workers=trainloader.num_workers)
+
+        # Train the model using the modified trainloader
+        model = Net()
+        model.to(device)
+        train(model, new_trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001,
+              momentum=0.9)
+
+        return model
+
+    def train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device):
+        all_metrics = {p: [] for p in percentages}
+
+        for p in percentages:
+            print(p)
+            for _ in range(num_trials):
+                model = train_cifar_model_with_percentage(p, trainset, trainloader, device)
+                metrics = calculate_metrics(model, testloader, device)
+                all_metrics[p].append(metrics)
+
+        return all_metrics
+
+    def average_metrics(all_metrics, num_trials):
+        averaged_metrics = {}
+
+        for p in all_metrics:
+            averaged = {
+                'accuracy': 0,
+                'per_class_accuracy': np.zeros(10),
+                'precision': np.zeros(10),
+                'recall': np.zeros(10),
+                'f1_score': np.zeros(10)
+            }
+
+            for metrics in all_metrics[p]:
+                averaged['accuracy'] += metrics['accuracy']
+                averaged['per_class_accuracy'] += np.array(metrics['per_class_accuracy'])
+                averaged['precision'] += np.array(metrics['precision'])
+                averaged['recall'] += np.array(metrics['recall'])
+                averaged['f1_score'] += np.array(metrics['f1_score'])
+
+            averaged['accuracy'] /= num_trials
+            averaged['per_class_accuracy'] /= num_trials
+            averaged['precision'] /= num_trials
+            averaged['recall'] /= num_trials
+            averaged['f1_score'] /= num_trials
+
+            averaged_metrics[p] = averaged
+
+        return averaged_metrics
+
+    percentages = [0, 25, 50, 75, 100]
+    num_trials = 10
+
+    # Assuming you have your trainset, trainloader, testloader, and device set up
+    all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device)
+    averaged_metrics = average_metrics(all_metrics, num_trials)
+
+    # Plot the metrics
+    metrics_history = [averaged_metrics[p] for p in percentages]
+    plot_metrics(metrics_history)
+
+
+def page4():
+
+    labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
     st.title("Experiment with Synthetic Diffusion")
-    custom_images = load_and_transform_images(synthetic_imgDir)
-    custom_labels = len(custom_images) * [3]  # Your assigned labels(cat)
 
     # Let's take a look at the distribution of classes in our CIFAR-10 subsample
+    st.markdown("CIFAR-10 is a highly curated dataset with 50,000 images in the training set that are all perfectly "
+                "balanced. Because we are doing some training and experimentation locally, we might not want to wait "
+                "for a model to train using 50,000 images, additionally we really want to showcase the difference in "
+                "performance when we are in a situation where we don't have all the data we would like, so right away "
+                "let's subsample the CIFAR-10 dataset uniformly to 10% of it's original size")
     st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
     class_counts_df = class_distribution_df(trainset)
     fig = bar_chart_classes(class_counts_df)
     st.pyplot(fig)
 
-    # Create a button for triggering the training process for base cifar-10 model
-    if st.button('Train CIFAR-10 base model'):
+    st.markdown("""We should now benchmark this base CIFAR-10 model with this subsampled training set. You can either 
+    choose to load the CIFAR-10 base model that was included in the repository, or train a new one yourself on the 
+    training set that was created to produce the previous bar char""")
+
+    # Check if the cifar10_base_model.pt exists
+    model_exists = os.path.exists("D:\\Projects\\syntheticDiffusion\\data\\models\\cifar10_base_model.pt")
+
+    # Create two columns for placing the buttons side by side
+    col1, col2 = st.columns(2)
+
+    # Display the button for training the base model in the first column
+    if col1.button('Train CIFAR-10 base model'):
         train_base_cifar_model()
+
+    # If the base model file exists, display the button for using the existing model in the second column
+    if model_exists:
+        if col2.button('Use existing CIFAR-10 base model'):
+            # Instantiate the model and load the state_dict from the file
+            st.session_state.cifar_net = Net()
+            st.session_state.cifar_net.load_state_dict(torch.load("D:\\Projects\\syntheticDiffusion\\data\\models\\cifar10_base_model.pt"))
+            st.session_state.cifar_net.to(device)
+
+            # Calculate the metrics for the existing model
+            cifar_metrics = calculate_metrics(st.session_state.cifar_net, testloader, device)
+            st.session_state.cifar_net_accuracy = cifar_metrics['accuracy']
+            st.session_state.cifar_net_per_class_accuracy = cifar_metrics['per_class_accuracy']
 
     # Show the net accuracy for the base model
     if 'cifar_net_accuracy' in st.session_state:
         st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy * 100:.2f}%")
+        basecifar_fig = plot_single_per_class_accuracy(st.session_state.cifar_net_per_class_accuracy, labels, 'CFIAR-10 base model')
+        st.pyplot(basecifar_fig)
+
+    st.markdown("Great! We now have a base model trained on the subsampled CIFAR-10 dataset, and it should work "
+                "reasonably well considering the simplicitly of our CNN and the size of the dataset. However, "
+                "in real world applications we would be quite lucky to have a real dataset that is totally"
+                "balanced across all class labels, so let's do some further ")
+
+    # Create a button to decrease cat samples
+    # If the button is pressed, show the slider and store its value in the session state
+    st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
+    cat_proportion = st.slider("Total proportion of cat images:", min_value=0.0, max_value=0.09, value=0.05, step=0.01)
+    st.session_state.cat_proportion = cat_proportion
+    st.session_state.cat_num = cat_proportion * 10 * 500  # TODO: this should not be hardcoded like it is
+
+    #
+    # If the session state has a cat_proportion, use it to load the data and display the chart
+    if "cat_proportion" in st.session_state:
+        trainset, trainloader, testset, testloader = load_cifar10(percentage=10,
+                                                                  cat_proportion=st.session_state.cat_proportion)
+
+        st.markdown("Let's take a look at the distribution of classes for our subsampled dataset now")
+        class_counts_df = class_distribution_df(trainset)
+        # TODO: maybe this chart can be replaced by a bokeh one
+        fig = bar_chart_classes(class_counts_df)
+        st.pyplot(fig)
+
+        # We don't want the load_cifar10 function to run again unless there has been a change in cat_proportion,
+        # so we delete the session state for the variable after using it
+        del st.session_state.cat_proportion
+
+    st.markdown("""Depending on your choice of the proportion of cat images, we should have an unbalanced dataset 
+    with fewer cat images than any other class. This is a situation we would normally try to avoid, so obviously, 
+    we should start adding our own synthetically created cat images to the training set to suppliment it!""")
 
     # ... (Load and transform synthetic images)
+    synthetic_imgDir = "D:\\Projects\\syntheticDiffusion\\data\\synthetic_cats\\"
     custom_images = load_and_transform_images(synthetic_imgDir)
     custom_labels = len(custom_images) * [3]  # Your assigned labels(cat)
 
     # Define slider for selecting number of custom images to add
-    st.markdown("""To further illustrate the performance increase that we get when we add more of our synthetic images
-    you can adjust the number of our synthetic cats you want to add to the CIFAR-10 dataset""")
-    # num_custom_images = st.slider('Select number of custom images to add to dataset', 0, len(custom_images), step=10)
-    num_custom_images = st.number_input(
-        f"Select the number of custom images to add to dataset (max{len(custom_images)})",
-        min_value=0,
-        max_value=len(custom_images), step=10)
+    st.markdown("""Use the slider below to set the number of synthetic cat images to add to the training data. 
+    By default it's set to fill the missing number of cat images, however you can add as many or few as you'd like. 
+    We can compare the relative performance by trying multiple values""")
+    num_custom_images = st.slider('Select number of custom images to add to dataset', 0,
+                                  (len(custom_images) - len(custom_images)%50), value=(500 - int(st.session_state.cat_num)), step=50)
 
     # Normalize CIFAR-10 images
     cfar_images = [trainset[i][0] for i in range(len(trainset))]
@@ -748,7 +937,7 @@ def page3():
 
         # Plot per-class accuracy
         st.subheader("Per-class Model Accuracy")
-        labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+
 
         fig = plot_per_class_accuracy(metrics, st.session_state.cifar_net_per_class_accuracy, labels,
                                       ['Custom model', 'CIFAR-10 Base model'])
@@ -769,40 +958,10 @@ def page3():
         st.session_state.prev_custom_net_accuracy = metrics['accuracy']
         st.session_state.prev_custom_net_per_class_accuracy = metrics['per_class_accuracy']
 
+def page5():
 
-st.markdown("# Synthetic Diffusion")
+    # This page exists for debugging purposes
 
-# These are the classes in the cifar-10 dataset (in proper order)
-classes = ('plane', 'car', 'bird', 'cat',
-           'deer', 'dog', 'frog', 'horse', 'ship', 'truck')  # TODO: do I still need this?
-
-batch_size = 16
-num_classes = 10
-epochs = 30
-cifar_percentage = 10
-
-device = 'cuda' if torch.cuda.is_available() else 'cpu'  # If gpu exists use cuda
-trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
-
-# st.bar_chart(class_counts_df.set_index("Class"))  # This is the previous version of the bar chart, which I like better but I don't know if it's possible to rotate the class labels
-
-# Create a button to decrease cat samples
-
-# # If the button is pressed, show the slider and store its value in the session state
-# st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
-# cat_proportion = st.slider("Proportion of cat images:", min_value=0.0, max_value=0.1, value=0.05, step=0.01)
-# st.session_state.cat_proportion = cat_proportion
-#
-# # If the session state has a cat_proportion, use it to load the data and display the chart
-# if "cat_proportion" in st.session_state:
-#     trainset, trainloader, testset, testloader = load_cifar10(percentage=10, cat_proportion=st.session_state.cat_proportion)
-#
-#     st.markdown("Let's take a look at the distribution of classes for our subsampled dataset now")
-#     class_counts_df = class_distribution_df(trainset)
-#     fig = bar_chart_classes(class_counts_df)
-#     st.pyplot(fig)
-
-def page4():
     import torch
     import io
 
@@ -827,14 +986,17 @@ def page4():
 
 # Sidebar menu for navigation
 st.sidebar.title("Navigation")
-selected_page = st.sidebar.radio("Go to", ["Introduction", "Page 2", "Hands-on", "Debugging"])
+selected_page = st.sidebar.radio("Go to", ["Introduction", "Synthetic Cats", "Pre-calculated results", "Hands-on", "Debugging"])
+
+st.markdown("# Synthetic Diffusion")
 
 # Mapping of pages to their respective functions
 pages = {
     "Introduction": page1,
-    "Page 2": page2,
-    "Hands-on": page3,
-    "Debugging": page4
+    "Synthetic Cats": page2,
+    "Pre-calculated results": page3,
+    "Hands-on": page4,
+    "Debugging": page5
 }
 
 # Call the function corresponding to the selected page
