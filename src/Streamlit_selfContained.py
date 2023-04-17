@@ -496,7 +496,7 @@ def train_base_cifar_model():
     st.session_state.cifar_net_accuracy = cifar_metrics['accuracy']
     st.session_state.cifar_net_per_class_accuracy = cifar_metrics['per_class_accuracy']
 
-    st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy*100:.2f}%")
+    #st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy*100:.2f}%")
 
 
 @st.cache_resource
@@ -627,6 +627,10 @@ def page3():
     # Create a button for triggering the training process for base cifar-10 model
     if st.button('Train CIFAR-10 base model'):
         train_base_cifar_model()
+
+    # Show the net accuracy for the base model
+    if 'cifar_net_accuracy' in st.session_state:
+        st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy * 100:.2f}%")
 
     # ... (Load and transform synthetic images)
     custom_images = load_and_transform_images(synthetic_imgDir)
