@@ -460,6 +460,77 @@ def bar_chart_classes(df):
 
     return fig
 
+#
+# def plot_per_class_accuracy(custom_metrics, cifar_metrics, labels):
+#     """
+#     Generates a bar graph plot comparing the per-class accuracy between two models.
+#
+#     Args:
+#         custom_metrics (dict): Metrics dictionary for the custom model.
+#         cifar_metrics (dict): Metrics dictionary for the CIFAR-10 model.
+#         labels (list): List of class labels.
+#     """
+#     x = np.arange(len(labels))
+#     width = 0.35
+#
+#     fig, ax = plt.subplots()
+#     rects1 = ax.bar(x - width / 2, np.array(custom_metrics['per_class_accuracy']) * 100, width, label='Custom Model')
+#     rects2 = ax.bar(x + width / 2, np.array(cifar_metrics['per_class_accuracy']) * 100, width, label='CIFAR-10 Model')
+#
+#     ax.set_ylabel('Accuracy')
+#     ax.set_title('Per-class Accuracy')
+#     ax.set_xticks(x)
+#     ax.set_xticklabels(labels, rotation=45)
+#     ax.legend()
+#
+#     return fig
+
+def autolabel(rects, ax, rotation=0):
+    """Add labels to bars in a bar chart with a specified rotation.
+
+    Args:
+    rects: List of bar chart rectangles.
+    ax: The axis object to annotate.
+    rotation: Text rotation in degrees (default is 0).
+    """
+    for rect in rects:
+        height = rect.get_height()
+        ax.annotate('{:.1f}'.format(height),
+                    xy=(rect.get_x() + rect.get_width() / 2, height),
+                    xytext=(0, 3),
+                    textcoords="offset points",
+                    ha='center', va='bottom', rotation=rotation)
+
+
+def plot_per_class_accuracy(metrics, cifar_net_per_class_accuracy, labels):
+    """Plot per-class accuracy for two models and display their percentage values on the bars.
+
+    Args:
+    metrics: Dictionary of custom model metrics.
+    cifar_net_per_class_accuracy: Per-class accuracy values for the CIFAR-10 model.
+    labels: List of class labels.
+    """
+    x = np.arange(len(labels))
+    width = 0.35
+
+    fig, ax = plt.subplots()
+    rects1 = ax.bar(x - width / 2, np.array(metrics['per_class_accuracy']) * 100, width, label='Custom Model')
+    rects2 = ax.bar(x + width / 2, np.array(cifar_net_per_class_accuracy) * 100, width, label='CIFAR-10 Model')
+
+    autolabel(rects1, ax, rotation=65)
+    autolabel(rects2, ax, rotation=65)
+
+    ax.set_ylabel('Accuracy')
+    ax.set_title('Per-class Accuracy')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=45)
+    ax.set_ylim(0, 100)
+    ax.legend()
+
+    return fig
+
+
+
 
 # Define a callback function to update the progress bar
 def update_progress(progress_bar, progress):
@@ -703,62 +774,37 @@ def page3():
         # Plot per-class accuracy
         st.subheader("Per-class Model Accuracy")
         labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
-        x = np.arange(len(labels))
-        width = 0.35
 
-        fig, ax = plt.subplots()
-        rects1 = ax.bar(x - width / 2, np.array(metrics['per_class_accuracy']) * 100, width, label='Custom Model')
-        rects2 = ax.bar(x + width / 2, np.array(st.session_state.cifar_net_per_class_accuracy) * 100, width,
-                        label='CIFAR-10 Model')
-
-        ax.set_ylabel('Accuracy')
-        ax.set_title('Per-class Accuracy')
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, rotation=45)
-        ax.legend()
-
-        def autolabel(rects):
-            """Attach a text label above each bar in *rects*, displaying its height."""
-            for rect in rects:
-                height = rect.get_height()
-                ax.annotate('{:.1f}%'.format(height),
-                            xy=(rect.get_x() + rect.get_width() / 2, height),
-                            xytext=(0, 3),  # 3 points vertical offset
-                            textcoords="offset points",
-                            ha='center', va='bottom',
-                            rotation=75)  # Rotate the text by 45 degrees
-
-        autolabel(rects1)
-        autolabel(rects2)
-
-        fig.tight_layout()
+        fig = plot_per_class_accuracy(metrics, st.session_state.cifar_net_per_class_accuracy, labels)
 
         st.pyplot(fig)
 
-        # Compare the new custom model with the previous custom model if it exists
-        if st.session_state.prev_custom_net_accuracy is not None:
-            st.subheader("Comparison with the Previous Custom Model")
-            st.write(f"Previous custom model accuracy: {st.session_state.prev_custom_net_accuracy * 100:.2f}%")
-            st.write(f"New custom model accuracy: {metrics['accuracy'] * 100:.2f}%")
 
-            # Plot per-class accuracy comparison
-            fig2, ax2 = plt.subplots()
-            rects3 = ax2.bar(x - width / 2, st.session_state.prev_custom_net_per_class_accuracy, width,
-                             label='Previous Custom Model')
-            rects4 = ax2.bar(x + width / 2, metrics['per_class_accuracy'] * 100, width, label='New Custom Model')
 
-            ax2.set_ylabel('Accuracy')
-            ax2.set_title('Per-class Accuracy Comparison')
-            ax2.set_xticks(x)
-            ax2.set_xticklabels(labels, rotation=45)
-            ax2.legend()
-
-            autolabel(rects3)
-            autolabel(rects4)
-
-            fig2.tight_layout()
-
-            st.pyplot(fig2)
+        # # Compare the new custom model with the previous custom model if it exists
+        # if st.session_state.prev_custom_net_accuracy is not None:
+        #     st.subheader("Comparison with the Previous Custom Model")
+        #     st.write(f"Previous custom model accuracy: {st.session_state.prev_custom_net_accuracy * 100:.2f}%")
+        #     st.write(f"New custom model accuracy: {metrics['accuracy'] * 100:.2f}%")
+        #
+        #     # Plot per-class accuracy comparison
+        #     fig2, ax2 = plt.subplots()
+        #     rects3 = ax2.bar(x - width / 2, st.session_state.prev_custom_net_per_class_accuracy, width,
+        #                      label='Previous Custom Model')
+        #     rects4 = ax2.bar(x + width / 2, metrics['per_class_accuracy'] * 100, width, label='New Custom Model')
+        #
+        #     ax2.set_ylabel('Accuracy')
+        #     ax2.set_title('Per-class Accuracy Comparison')
+        #     ax2.set_xticks(x)
+        #     ax2.set_xticklabels(labels, rotation=45)
+        #     ax2.legend()
+        #
+        #     autolabel(rects3)
+        #     autolabel(rects4)
+        #
+        #     fig2.tight_layout()
+        #
+        #     st.pyplot(fig2)
 
         # Store the previous custom model's accuracies before updating the current ones
         st.session_state.prev_custom_net_accuracy = metrics['accuracy']
@@ -797,99 +843,39 @@ trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
 #     fig = bar_chart_classes(class_counts_df)
 #     st.pyplot(fig)
 
-# st.markdown("# DUMMY")
-# from bokeh.models import ColumnDataSource, CustomJS, Slider
-# from bokeh.plotting import figure
-# from bokeh.layouts import column
-#
-#
-# def interactive_bar_chart(class_labels, initial_proportions):
-#     # Create a DataFrame with the class labels and initial proportions
-#     data = pd.DataFrame({"classes": class_labels, "proportions": initial_proportions})
-#
-#     # Create a ColumnDataSource from the DataFrame
-#     source = ColumnDataSource(data)
-#
-#     # Create the interactive bar chart
-#     plot = figure(x_range=class_labels, height=500, title="Class Proportions")
-#     plot.vbar(x="classes", top="proportions", width=0.9, source=source)
-#     plot.y_range.start = 0
-#     plot.xgrid.grid_line_color = None
-#     plot.xaxis.axis_label = "Classes"
-#     plot.yaxis.axis_label = "Proportions"
-#
-#     # Create a slider for the cat class
-#     slider = Slider(start=0, end=0.1, value=0.1, step=0.01, title="Proportion of cat images")
-#
-#     # Update the callback to store the current class proportions in the session state
-#     callback = CustomJS(args=dict(source=source, slider=slider), code="""
-#         const data = source.data;
-#         const cat_proportion = slider.value;
-#
-#         // Calculate the sum of the proportions of other classes
-#         const other_classes_sum = data["proportions"].reduce((sum, value, index) => {
-#             return sum + (data["classes"][index] === "cat" ? 0 : value);
-#         }, 0);
-#
-#         for (let i = 0; i < data["classes"].length; i++) {
-#             if (data["classes"][i] === "cat") {
-#                 data["proportions"][i] = cat_proportion;
-#             } else {
-#                 data["proportions"][i] = data["proportions"][i] * (1 - cat_proportion) / other_classes_sum;
-#             }
-#         }
-#         source.change.emit();
-#
-#         // Store the current class proportions in the session state and trigger a re-run
-#         streamlit.setSessionState({class_proportions: data["proportions"], rerun: true});
-#     """)
-#
-#     # Assign the callback to the slider
-#     slider.js_on_change("value", callback)
-#
-#     # Display the interactive bar chart and the slider using Bokeh
-#     st.bokeh_chart(column(slider, plot))
+def page4():
+    import torch
+    import io
 
-# class_labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
-# initial_proportions = [0.1] * 10
-#
-# interactive_bar_chart(class_labels, initial_proportions)
-#
-# # Check if the current class proportions are available in the session state
-# if "class_proportions" in st.session_state:
-# # Convert the current class proportions to a dictionary (replace with your actual class labels)
-#     current_class_proportions = dict(zip(class_labels, st.session_state.class_proportions))
-#
-#     # Reload the dataset and display other visualizations using the current class proportions
-#     trainset, trainloader, testset, testloader = load_cifar10(percentage=10,
-#                                                               class_proportions=current_class_proportions)
-#
-#     # Display any other visualizations or information related to the dataset
-#     # ...
-#
-#     # Reset the 'rerun' flag in the session state after the app has re-run
-#     if "rerun" in st.session_state and st.session_state.rerun:
-#         st.session_state.rerun = False
-#
-# if st.button('show cat class length for debugging'):
-#     # Let's take a look at the distribution of classes in our CIFAR-10 subsample
-#     st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
-#     class_counts_df = class_distribution_df(trainset)
-#     fig = bar_chart_classes(class_counts_df)
-#     st.pyplot(fig)
-#
-# st.markdown("# End of DUMMY")
+    # ... your existing code ...
+
+    if 'cifar_net_accuracy' in st.session_state:
+        st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy * 100:.2f}%")
+
+        # Save the model to a binary format (PyTorch)
+        model_binary = io.BytesIO()
+        torch.save(st.session_state.cifar_net.state_dict(), model_binary)
+        model_binary.seek(0)
+
+        # Create a download button for the model
+        st.download_button(
+            label="Download CIFAR-10 base model",
+            data=model_binary,
+            file_name="cifar10_base_model.pt",
+            mime="application/octet-stream"
+        )
 
 
 # Sidebar menu for navigation
 st.sidebar.title("Navigation")
-selected_page = st.sidebar.radio("Go to", ["Introduction", "Page 2", "Hands-on"])
+selected_page = st.sidebar.radio("Go to", ["Introduction", "Page 2", "Hands-on", "Debugging"])
 
 # Mapping of pages to their respective functions
 pages = {
     "Introduction": page1,
     "Page 2": page2,
-    "Hands-on": page3
+    "Hands-on": page3,
+    "Debugging": page4
 }
 
 # Call the function corresponding to the selected page
