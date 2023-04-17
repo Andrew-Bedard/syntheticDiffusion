@@ -123,37 +123,6 @@ def plot_metrics(metrics_history):
     plt.grid()
     plt.show()
 
-# def calculate_accuracy(model, dataloader, device):
-#     correct = 0
-#     total = 0
-#     with torch.no_grad():
-#         for data in dataloader:
-#             images, labels = data
-#             images, labels = images.to(device), labels.to(device)
-#             outputs = model(images)
-#             _, predicted = torch.max(outputs.data, 1)
-#             total += labels.size(0)
-#             correct += (predicted == labels).sum().item()
-#     return 100 * correct / total
-#
-#
-# def calculate_per_class_accuracy(model, dataloader, device, num_classes):
-#     class_correct = list(0. for i in range(num_classes))
-#     class_total = list(0. for i in range(num_classes))
-#     with torch.no_grad():
-#         for data in dataloader:
-#             images, labels = data
-#             images, labels = images.to(device), labels.to(device)
-#             outputs = model(images)
-#             _, predicted = torch.max(outputs, 1)
-#             c = (predicted == labels).squeeze()
-#             for i in range(len(labels)):
-#                 label = labels[i]
-#                 class_correct[label] += c[i].item()
-#                 class_total[label] += 1
-#     per_class_accuracy = [100 * class_correct[i] / class_total[i] for i in range(num_classes)]
-#     return per_class_accuracy
-
 
 def calculate_metrics(model, dataloader, device, num_classes=10):
     """
