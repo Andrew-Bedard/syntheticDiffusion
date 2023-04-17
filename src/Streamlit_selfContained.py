@@ -460,30 +460,6 @@ def bar_chart_classes(df):
 
     return fig
 
-#
-# def plot_per_class_accuracy(custom_metrics, cifar_metrics, labels):
-#     """
-#     Generates a bar graph plot comparing the per-class accuracy between two models.
-#
-#     Args:
-#         custom_metrics (dict): Metrics dictionary for the custom model.
-#         cifar_metrics (dict): Metrics dictionary for the CIFAR-10 model.
-#         labels (list): List of class labels.
-#     """
-#     x = np.arange(len(labels))
-#     width = 0.35
-#
-#     fig, ax = plt.subplots()
-#     rects1 = ax.bar(x - width / 2, np.array(custom_metrics['per_class_accuracy']) * 100, width, label='Custom Model')
-#     rects2 = ax.bar(x + width / 2, np.array(cifar_metrics['per_class_accuracy']) * 100, width, label='CIFAR-10 Model')
-#
-#     ax.set_ylabel('Accuracy')
-#     ax.set_title('Per-class Accuracy')
-#     ax.set_xticks(x)
-#     ax.set_xticklabels(labels, rotation=45)
-#     ax.legend()
-#
-#     return fig
 
 def autolabel(rects, ax, rotation=0):
     """Add labels to bars in a bar chart with a specified rotation.
@@ -502,20 +478,21 @@ def autolabel(rects, ax, rotation=0):
                     ha='center', va='bottom', rotation=rotation)
 
 
-def plot_per_class_accuracy(metrics, cifar_net_per_class_accuracy, labels):
+def plot_per_class_accuracy(metrics, cifar_net_per_class_accuracy, labels, model_labels):
     """Plot per-class accuracy for two models and display their percentage values on the bars.
 
     Args:
     metrics: Dictionary of custom model metrics.
     cifar_net_per_class_accuracy: Per-class accuracy values for the CIFAR-10 model.
     labels: List of class labels.
+    model_labels: List of str, colour coding for bars to indicate model
     """
     x = np.arange(len(labels))
     width = 0.35
 
     fig, ax = plt.subplots()
-    rects1 = ax.bar(x - width / 2, np.array(metrics['per_class_accuracy']) * 100, width, label='Custom Model')
-    rects2 = ax.bar(x + width / 2, np.array(cifar_net_per_class_accuracy) * 100, width, label='CIFAR-10 Model')
+    rects1 = ax.bar(x - width / 2, np.array(metrics['per_class_accuracy']) * 100, width, label=model_labels[0])
+    rects2 = ax.bar(x + width / 2, np.array(cifar_net_per_class_accuracy) * 100, width, label=model_labels[1])
 
     autolabel(rects1, ax, rotation=65)
     autolabel(rects2, ax, rotation=65)
@@ -528,8 +505,6 @@ def plot_per_class_accuracy(metrics, cifar_net_per_class_accuracy, labels):
     ax.legend()
 
     return fig
-
-
 
 
 # Define a callback function to update the progress bar
@@ -775,36 +750,20 @@ def page3():
         st.subheader("Per-class Model Accuracy")
         labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
-        fig = plot_per_class_accuracy(metrics, st.session_state.cifar_net_per_class_accuracy, labels)
+        fig = plot_per_class_accuracy(metrics, st.session_state.cifar_net_per_class_accuracy, labels,
+                                      ['Custom model', 'CIFAR-10 Base model'])
 
         st.pyplot(fig)
 
+        # Compare the new custom model with the previous custom model if it exists
+        if st.session_state.prev_custom_net_accuracy is not None:
+            st.subheader("Comparison with the Previous Custom Model")
+            fig2 = plot_per_class_accuracy(metrics, st.session_state.prev_custom_net_per_class_accuracy, labels,
+                                           ['Current Custom Model', 'Previous Custom Model'])
 
+            fig2.tight_layout()
 
-        # # Compare the new custom model with the previous custom model if it exists
-        # if st.session_state.prev_custom_net_accuracy is not None:
-        #     st.subheader("Comparison with the Previous Custom Model")
-        #     st.write(f"Previous custom model accuracy: {st.session_state.prev_custom_net_accuracy * 100:.2f}%")
-        #     st.write(f"New custom model accuracy: {metrics['accuracy'] * 100:.2f}%")
-        #
-        #     # Plot per-class accuracy comparison
-        #     fig2, ax2 = plt.subplots()
-        #     rects3 = ax2.bar(x - width / 2, st.session_state.prev_custom_net_per_class_accuracy, width,
-        #                      label='Previous Custom Model')
-        #     rects4 = ax2.bar(x + width / 2, metrics['per_class_accuracy'] * 100, width, label='New Custom Model')
-        #
-        #     ax2.set_ylabel('Accuracy')
-        #     ax2.set_title('Per-class Accuracy Comparison')
-        #     ax2.set_xticks(x)
-        #     ax2.set_xticklabels(labels, rotation=45)
-        #     ax2.legend()
-        #
-        #     autolabel(rects3)
-        #     autolabel(rects4)
-        #
-        #     fig2.tight_layout()
-        #
-        #     st.pyplot(fig2)
+            st.pyplot(fig2)
 
         # Store the previous custom model's accuracies before updating the current ones
         st.session_state.prev_custom_net_accuracy = metrics['accuracy']
@@ -880,3 +839,8 @@ pages = {
 
 # Call the function corresponding to the selected page
 pages[selected_page]()
+
+
+# TODO: add slider to reduce number of cat pictures
+# TODO: add precalculated results to page2
+# TODO: add the ability to check for cifar10 base model before retraining, but also allow for training
