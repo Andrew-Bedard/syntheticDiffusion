@@ -1,4 +1,5 @@
 data/*
 !data/synthetic_cats/
+!data/models/
 src/data/cifar-10-batches-py
 src/data/cifar-10-python.tar.gz

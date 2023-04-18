@@ -127,7 +127,6 @@ def plot_metrics(metrics_history):
     return fig
 
 
-
 def calculate_metrics(model, dataloader, device, num_classes=10):
     """
     Computes accuracy, per-class accuracy, precision, recall, and F1 score for a given model and dataset.
@@ -543,7 +542,7 @@ def update_progress(progress_bar, progress):
     progress_bar.progress(progress)
 
 
-def train_base_cifar_model():
+def train_base_cifar_model(trainloader,testloader):
     """
     Trains the base CIFAR-10 model using the full CIFAR-10 dataset and stores the model, its accuracy,
     and per-class accuracy in the Streamlit session state. Displays the training progress and accuracy
@@ -701,7 +700,9 @@ def page2():
 
 def page3():
 
-    st.markdown("WARNING! Pressing the following button will take a long time to complete")
+    st.markdown("WARNING! Depending on how many trails you select, pressing the following button will take a long "
+                "time to complete")
+    num_trials = st.selectbox('Select number of trails to run per % holdout of cat images:', list(range(1, 11)))
     if st.button("Perform batch training/metrics"):
 
         trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
@@ -785,7 +786,7 @@ def page3():
             return averaged_metrics
 
         percentages = [0, 25, 50, 75, 100]
-        num_trials = 3
+        # num_trials = 10
 
         # Assuming you have your trainset, trainloader, testloader, and device set up
         all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device)
@@ -793,9 +794,10 @@ def page3():
 
         # Plot the metrics
         metrics_history = [averaged_metrics[p] for p in percentages]
-        fig = plot_metrics(metrics_history)
-        st.pyplot(fig)
+        st.session_state.batch_figure = plot_metrics(metrics_history)
 
+    if 'batch_figure' in st.session_state:
+        st.pyplot(st.session_state.batch_figure)
 
 def page4():
     trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
@@ -826,7 +828,7 @@ def page4():
 
     # Display the button for training the base model in the first column
     if col1.button('Train CIFAR-10 base model'):
-        train_base_cifar_model()
+        train_base_cifar_model(trainloader, testloader)
 
     # If the base model file exists, display the button for using the existing model in the second column
     if model_exists:
