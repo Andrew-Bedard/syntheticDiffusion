@@ -62,38 +62,6 @@ def train(net, model_trainloader, device, epochs=4, print_every=2000, learning_r
     print('Finished Training')
 
 
-# def train_base_cifar_model(trainloader, testloader, device, epochs):
-#     """
-#     Trains the base CIFAR-10 model using the full CIFAR-10 dataset and stores the model, its accuracy,
-#     and per-class accuracy in the Streamlit session state. Displays the training progress and accuracy
-#     in the Streamlit app.
-#     """
-#     cifar_net = Net()
-#     cifar_net.to(device)
-#
-#     # Display a message while the model is being trained
-#     training_message = st.empty()
-#     training_message.text("Training base CIFAR-10 model...")
-#
-#     # Create a progress bar
-#     progress_bar = st.progress(0)
-#
-#     st.session_state.cifar_net = Net()
-#     st.session_state.cifar_net.to(device)
-#     train(st.session_state.cifar_net, trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001,
-#           momentum=0.9, progress_callback=update_progress, progress_bar=progress_bar)
-#
-#     # Remove the progress bar after training is complete
-#     progress_bar.empty()
-#
-#     # Clear the message and display the results
-#     training_message.empty()
-#     cifar_metrics = calculate_metrics(st.session_state.cifar_net, testloader, device)
-#     st.session_state.cifar_net_accuracy = cifar_metrics['accuracy']
-#     st.session_state.cifar_net_per_class_accuracy = cifar_metrics['per_class_accuracy']
-#
-#     # st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_net_accuracy*100:.2f}%")
-
 def train_and_display(model_name, trainloader, testloader, device, epochs):
     """
     Trains a model using the given trainloader and stores the model and its accuracy in the Streamlit session state.

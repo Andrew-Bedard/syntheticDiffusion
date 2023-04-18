@@ -508,51 +508,6 @@ def create_testloader(testset, batch_size):
     """
     return torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
 
-
-# @st.cache_resource
-# def load_cifar10(class_proportions, percentage=10, cat_proportion=0.1, batch_size=100):
-#     """
-#     Loads the CIFAR-10 dataset with a custom proportion of cat samples in the training set.
-#
-#     Args:
-#         percentage (int, optional): The percentage of the total dataset to use for the training set. Defaults to 10.
-#         cat_proportion (float, optional): The proportion of cat samples in the training set. Defaults to 0.1.
-#         batch_size (int, optional): The number of samples per batch to load. Defaults to 100.
-#         class_proportions (dict, optional): A dictionary containing the initial class proportions. If not provided,
-#                                             a default dictionary with equal proportions for all classes will be used.
-#
-#     Returns:
-#         tuple: A tuple containing the trainset, trainloader, testset, and testloader for the modified CIFAR-10 dataset.
-#     """
-#     transform = get_transforms()
-#     normalized_proportions = normalize_class_proportions(class_proportions, 'cat', cat_proportion)
-#
-#     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
-#     testloader = create_testloader(testset, batch_size)
-#
-#     trainset = CIFAR10Subsample(root='./data', train=True, transform=transform, percentage=percentage,
-#                                 class_proportions=normalized_proportions)
-#     trainloader = create_trainloader(trainset, batch_size)
-#
-#     return trainset, trainloader, testset, testloader
-
-
-# def normalize_class_proportions(class_proportions, target_class, new_proportion):
-#     """
-#
-#     :param class_proportions:
-#     :param target_class:
-#     :param new_proportion:
-#     :return:
-#     """
-#     adjusted_proportions = class_proportions.copy()
-#     adjusted_proportions[target_class] = new_proportion
-#
-#     sum_proportions = sum(adjusted_proportions.values())
-#     normalized_proportions = {key: value / sum_proportions for key, value in adjusted_proportions.items()}
-#
-#     return normalized_proportions
-
 @st.cache_resource
 def load_cifar10_trainset(percentage=10, batch_size=16, class_proportions=None, sample_method=None):
     """
