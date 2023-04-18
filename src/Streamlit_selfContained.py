@@ -636,7 +636,6 @@ epochs = 30
 cifar_percentage = 10
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'  # If gpu exists use cuda
-trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
 
 def page1():
     st.title("Background")
@@ -696,98 +695,104 @@ def page2():
 
 
 def page3():
-    st.title("Pre-calculated results")
 
-    from torch.utils.data import Subset
-    import random
+    st.markdown("WARNING! Pressing the following button will take a long time to complete")
+    if st.button("Perform batch training/metrics"):
 
-    def train_cifar_model_with_percentage(percentage, trainset, trainloader, device):
-        # Find the indices of the cat images in the trainset
-        cat_indices = [i for i, (image, label) in enumerate(trainset) if
-                       label == 3]  # Assuming cat class has a label of 3
+        trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
 
-        # Calculate the number of cat images to include in the subsampled dataset
-        num_cat_images = int(len(cat_indices) * (percentage / 100))
+        st.title("Pre-calculated results")
 
-        # Randomly choose the cat images to include
-        chosen_cat_indices = random.sample(cat_indices, num_cat_images)
+        from torch.utils.data import Subset
+        import random
 
-        # Find the indices of the non-cat images in the trainset
-        non_cat_indices = [i for i in range(len(trainset)) if i not in cat_indices]
+        def train_cifar_model_with_percentage(percentage, trainset, trainloader, device):
+            # Find the indices of the cat images in the trainset
+            cat_indices = [i for i, (image, label) in enumerate(trainset) if
+                           label == 3]  # Assuming cat class has a label of 3
 
-        # Combine the chosen cat image indices with the non-cat image indices
-        new_trainset_indices = non_cat_indices + chosen_cat_indices
+            # Calculate the number of cat images to include in the subsampled dataset
+            num_cat_images = int(len(cat_indices) * (percentage / 100))
 
-        # Create a new Subset with the specified percentage of cat images
-        new_trainset = Subset(trainset, new_trainset_indices)
+            # Randomly choose the cat images to include
+            chosen_cat_indices = random.sample(cat_indices, num_cat_images)
 
-        # Create a new DataLoader with the modified trainset
-        new_trainloader = torch.utils.data.DataLoader(new_trainset, batch_size=trainloader.batch_size, shuffle=True,
-                                                      num_workers=trainloader.num_workers)
+            # Find the indices of the non-cat images in the trainset
+            non_cat_indices = [i for i in range(len(trainset)) if i not in cat_indices]
 
-        # Train the model using the modified trainloader
-        model = Net()
-        model.to(device)
-        train(model, new_trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001,
-              momentum=0.9)
+            # Combine the chosen cat image indices with the non-cat image indices
+            new_trainset_indices = non_cat_indices + chosen_cat_indices
 
-        return model
+            # Create a new Subset with the specified percentage of cat images
+            new_trainset = Subset(trainset, new_trainset_indices)
 
-    def train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device):
-        all_metrics = {p: [] for p in percentages}
+            # Create a new DataLoader with the modified trainset
+            new_trainloader = torch.utils.data.DataLoader(new_trainset, batch_size=trainloader.batch_size, shuffle=True,
+                                                          num_workers=trainloader.num_workers)
 
-        for p in percentages:
-            print(p)
-            for _ in range(num_trials):
-                model = train_cifar_model_with_percentage(p, trainset, trainloader, device)
-                metrics = calculate_metrics(model, testloader, device)
-                all_metrics[p].append(metrics)
+            # Train the model using the modified trainloader
+            model = Net()
+            model.to(device)
+            train(model, new_trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001,
+                  momentum=0.9)
 
-        return all_metrics
+            return model
 
-    def average_metrics(all_metrics, num_trials):
-        averaged_metrics = {}
+        def train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device):
+            all_metrics = {p: [] for p in percentages}
 
-        for p in all_metrics:
-            averaged = {
-                'accuracy': 0,
-                'per_class_accuracy': np.zeros(10),
-                'precision': np.zeros(10),
-                'recall': np.zeros(10),
-                'f1_score': np.zeros(10)
-            }
+            for p in percentages:
+                print(p)
+                for _ in range(num_trials):
+                    model = train_cifar_model_with_percentage(p, trainset, trainloader, device)
+                    metrics = calculate_metrics(model, testloader, device)
+                    all_metrics[p].append(metrics)
 
-            for metrics in all_metrics[p]:
-                averaged['accuracy'] += metrics['accuracy']
-                averaged['per_class_accuracy'] += np.array(metrics['per_class_accuracy'])
-                averaged['precision'] += np.array(metrics['precision'])
-                averaged['recall'] += np.array(metrics['recall'])
-                averaged['f1_score'] += np.array(metrics['f1_score'])
+            return all_metrics
 
-            averaged['accuracy'] /= num_trials
-            averaged['per_class_accuracy'] /= num_trials
-            averaged['precision'] /= num_trials
-            averaged['recall'] /= num_trials
-            averaged['f1_score'] /= num_trials
+        def average_metrics(all_metrics, num_trials):
+            averaged_metrics = {}
 
-            averaged_metrics[p] = averaged
+            for p in all_metrics:
+                averaged = {
+                    'accuracy': 0,
+                    'per_class_accuracy': np.zeros(10),
+                    'precision': np.zeros(10),
+                    'recall': np.zeros(10),
+                    'f1_score': np.zeros(10)
+                }
 
-        return averaged_metrics
+                for metrics in all_metrics[p]:
+                    averaged['accuracy'] += metrics['accuracy']
+                    averaged['per_class_accuracy'] += np.array(metrics['per_class_accuracy'])
+                    averaged['precision'] += np.array(metrics['precision'])
+                    averaged['recall'] += np.array(metrics['recall'])
+                    averaged['f1_score'] += np.array(metrics['f1_score'])
 
-    percentages = [0, 25, 50, 75, 100]
-    num_trials = 10
+                averaged['accuracy'] /= num_trials
+                averaged['per_class_accuracy'] /= num_trials
+                averaged['precision'] /= num_trials
+                averaged['recall'] /= num_trials
+                averaged['f1_score'] /= num_trials
 
-    # Assuming you have your trainset, trainloader, testloader, and device set up
-    all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device)
-    averaged_metrics = average_metrics(all_metrics, num_trials)
+                averaged_metrics[p] = averaged
 
-    # Plot the metrics
-    metrics_history = [averaged_metrics[p] for p in percentages]
-    plot_metrics(metrics_history)
+            return averaged_metrics
+
+        percentages = [0, 25, 50, 75, 100]
+        num_trials = 10
+
+        # Assuming you have your trainset, trainloader, testloader, and device set up
+        all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device)
+        averaged_metrics = average_metrics(all_metrics, num_trials)
+
+        # Plot the metrics
+        metrics_history = [averaged_metrics[p] for p in percentages]
+        plot_metrics(metrics_history)
 
 
 def page4():
-
+    trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
     labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
     st.title("Experiment with Synthetic Diffusion")
