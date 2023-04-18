@@ -5,65 +5,68 @@ from PIL import Image
 import os
 import streamlit as st
 
-from src.data.data_utils import CIFAR10Subsample, class_distribution_df, CustomDataset, load_and_transform_images
+from src.data.data_utils import CIFAR10Subsample, class_distribution_df, CustomDataset, load_and_transform_images, \
+    load_cifar10_testset, load_cifar10_trainset
 from src.viewer.visualization_utils import bar_chart_classes, plot_metrics, plot_per_class_accuracy, \
     plot_single_per_class_accuracy
 from src.model.model import train_and_display, calculate_metrics, Net
 
 torch.manual_seed(0)
 
-@st.cache_resource
-def load_cifar10(percentage=10, cat_proportion=0.1):
-    """
 
-    :param percentage:
-    :param cat_proportion:
-    :return:
-    """
 
-    def normalize_class_proportions(class_proportions, target_class, new_proportion):
-        """
-
-        :param class_proportions:
-        :param target_class:
-        :param new_proportion:
-        :return:
-        """
-        adjusted_proportions = class_proportions.copy()
-        adjusted_proportions[target_class] = new_proportion
-
-        sum_proportions = sum(adjusted_proportions.values())
-        normalized_proportions = {key: value / sum_proportions for key, value in adjusted_proportions.items()}
-
-        return normalized_proportions
-
-    transform = transforms.Compose(
-        [transforms.ToTensor(),
-         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-
-    class_proportions = {'airplane': 0.1,
-                         'automobile': 0.1,
-                         'bird': 0.1,
-                         'cat': cat_proportion,  # Pass the cat_proportion here
-                         'deer': 0.1,
-                         'dog': 0.1,
-                         'frog': 0.1,
-                         'horse': 0.1,
-                         'ship': 0.1,
-                         'truck': 0.1
-                         }
-
-    # Normalize the class proportions based on the new cat_proportion
-    normalized_proportions = normalize_class_proportions(class_proportions, 'cat', cat_proportion)
-
-    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
-
-    trainset = CIFAR10Subsample(root='./data', train=True, transform=transform, percentage=percentage,
-                                class_proportions=class_proportions)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=0)
-
-    return trainset, trainloader, testset, testloader
+# @st.cache_resource
+# def load_cifar10(percentage=10, cat_proportion=0.1):
+#     """
+#
+#     :param percentage:
+#     :param cat_proportion:
+#     :return:
+#     """
+#
+#     def normalize_class_proportions(class_proportions, target_class, new_proportion):
+#         """
+#
+#         :param class_proportions:
+#         :param target_class:
+#         :param new_proportion:
+#         :return:
+#         """
+#         adjusted_proportions = class_proportions.copy()
+#         adjusted_proportions[target_class] = new_proportion
+#
+#         sum_proportions = sum(adjusted_proportions.values())
+#         normalized_proportions = {key: value / sum_proportions for key, value in adjusted_proportions.items()}
+#
+#         return normalized_proportions
+#
+#     transform = transforms.Compose(
+#         [transforms.ToTensor(),
+#          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+#
+#     class_proportions = {'airplane': 0.1,
+#                          'automobile': 0.1,
+#                          'bird': 0.1,
+#                          'cat': cat_proportion,  # Pass the cat_proportion here
+#                          'deer': 0.1,
+#                          'dog': 0.1,
+#                          'frog': 0.1,
+#                          'horse': 0.1,
+#                          'ship': 0.1,
+#                          'truck': 0.1
+#                          }
+#
+#     # Normalize the class proportions based on the new cat_proportion
+#     normalized_proportions = normalize_class_proportions(class_proportions, 'cat', cat_proportion)
+#
+#     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+#     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
+#
+#     trainset = CIFAR10Subsample(root='./data', train=True, transform=transform, percentage=percentage,
+#                                 class_proportions=class_proportions)
+#     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=0)
+#
+#     return trainset, trainloader, testset, testloader
 
 
 # These are the classes in the cifar-10 dataset (in proper order)
@@ -76,7 +79,7 @@ epochs = 30
 cifar_percentage = 10
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'  # If gpu exists use cuda
-
+st.session_state.testset, st.session_state.testloader = load_cifar10_testset(batch_size)
 
 def page1():
     st.title("Background")
@@ -240,7 +243,8 @@ def page3():
     st.markdown("DUMMY")
 
 def page4():
-    trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
+    # trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
+    trainset, trainloader = load_cifar10_trainset(cifar_percentage, batch_size, sample_method='uniform')
     labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
     st.title("Experiment with Synthetic Diffusion")
@@ -268,7 +272,7 @@ def page4():
 
     # Display the button for training the base model in the first column
     if col1.button('Train CIFAR-10 base model'):
-        train_and_display('cifar_base', trainloader, testloader, device, epochs)
+        train_and_display('cifar_base', trainloader, st.session_state.testloader, device, epochs)
 
     # If the base model file exists, display the button for using the existing model in the second column
     if model_exists:
@@ -279,7 +283,7 @@ def page4():
             st.session_state.cifar_net.to(device)
 
             # Calculate the metrics for the existing model
-            cifar_metrics = calculate_metrics(st.session_state.cifar_net, testloader, device)
+            cifar_metrics = calculate_metrics(st.session_state.cifar_net, st.session_state.testloader, device)
             st.session_state.cifar_net_accuracy = cifar_metrics['accuracy']
             st.session_state.cifar_net_per_class_accuracy = cifar_metrics['per_class_accuracy']
 
@@ -303,22 +307,22 @@ def page4():
     st.session_state.cat_num = cat_proportion * 10 * 500  # TODO: this should not be hardcoded like it is
 
     #
-    # If the session state has a cat_proportion, use it to load the data and display the chart
-    if "cat_proportion" in st.session_state:
-        # TODO: to make this more performant, we should not be using load_cifar10 but instead subsample the
-        #  trainset we already have
-        trainset, trainloader, testset, testloader = load_cifar10(percentage=10,
-                                                                  cat_proportion=st.session_state.cat_proportion)
-
-        st.markdown("Let's take a look at the distribution of classes for our subsampled dataset now")
-        class_counts_df = class_distribution_df(trainset)
-        # TODO: maybe this chart can be replaced by a bokeh one
-        fig = bar_chart_classes(class_counts_df)
-        st.pyplot(fig)
-
-        # We don't want the load_cifar10 function to run again unless there has been a change in cat_proportion,
-        # so we delete the session state for the variable after using it
-        del st.session_state.cat_proportion
+    # # If the session state has a cat_proportion, use it to load the data and display the chart
+    # if "cat_proportion" in st.session_state:
+    #     # TODO: to make this more performant, we should not be using load_cifar10 but instead subsample the
+    #     #  trainset we already have
+    #     trainset, trainloader, testset, testloader = load_cifar10(percentage=10,
+    #                                                               cat_proportion=st.session_state.cat_proportion)
+    #
+    #     st.markdown("Let's take a look at the distribution of classes for our subsampled dataset now")
+    #     class_counts_df = class_distribution_df(trainset)
+    #     # TODO: maybe this chart can be replaced by a bokeh one
+    #     fig = bar_chart_classes(class_counts_df)
+    #     st.pyplot(fig)
+    #
+    #     # We don't want the load_cifar10 function to run again unless there has been a change in cat_proportion,
+    #     # so we delete the session state for the variable after using it
+    #     del st.session_state.cat_proportion
 
     st.markdown("""Depending on your choice of the proportion of cat images, we should have an unbalanced dataset 
     with fewer cat images than any other class. This is a situation we would normally try to avoid, so obviously, 

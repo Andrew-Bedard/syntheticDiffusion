@@ -11,6 +11,7 @@ import os
 import random
 import pandas as pd
 from collections import Counter
+import streamlit as st
 
 def resize_normalize(img_path):
     """ Resize 512 by 512 rgb images that we get from stable diffusion, convert to pytorch tensor, then normalize
@@ -279,6 +280,7 @@ class CustomDataset(torch.utils.data.Dataset):
         """
         return len(self.images)
 
+
 class CIFAR10Subsample(torch.utils.data.Dataset):
     """
     A custom PyTorch Dataset class that subsamples the CIFAR-10 dataset.
@@ -290,29 +292,16 @@ class CIFAR10Subsample(torch.utils.data.Dataset):
         percentage (int, optional): The percentage of the original dataset to include in the subsampled dataset. Defaults to 10.
         download (bool, optional): If True, download the dataset if it is not already present in the specified root directory. Defaults to True.
         seed (int, optional): The random seed to use when selecting samples. Defaults to None.
+        class_proportions (dict, optional): A dictionary containing the desired class proportions. If not provided, equal proportions for all classes will be used.
+        sampling_method (str, optional): The method to use for sampling the dataset. Can be either 'random' or 'uniform'. Defaults to 'random'.
 
     Example:
         >>> cifar10_subsample = CIFAR10Subsample(root='./data', train=True, transform=transforms.ToTensor(), percentage=10)
         >>> dataloader = torch.utils.data.DataLoader(cifar10_subsample, batch_size=32, shuffle=True, num_workers=2)
     """
 
-    def __init__(self, root, train=True, transform=None, percentage=10, download=True, seed=None):
-        self.cifar_dataset = torchvision.datasets.CIFAR10(
-            root=root, train=train, transform=transform, download=download
-        )
-
-        random.seed(seed)
-        num_samples = int(len(self.cifar_dataset) * percentage / 100)
-        self.indices = random.sample(range(len(self.cifar_dataset)), num_samples)
-
-    def __len__(self):
-        return len(self.indices)
-
-    def __getitem__(self, index):
-        return self.cifar_dataset[self.indices[index]]
-
     def __init__(self, root, train=True, transform=None, percentage=10, download=True, seed=None,
-                 class_proportions=None):
+                 class_proportions=None, sampling_method='random'):
         self.cifar_dataset = torchvision.datasets.CIFAR10(
             root=root, train=train, transform=transform, download=download
         )
@@ -329,9 +318,15 @@ class CIFAR10Subsample(torch.utils.data.Dataset):
         if class_proportions is not None:
             self.indices = self._get_proportional_indices(class_proportions, num_samples)
         else:
-            self.indices = random.sample(range(len(self.cifar_dataset)), num_samples)
+            if sampling_method == 'random':
+                self.indices = random.sample(range(len(self.cifar_dataset)), num_samples)
+            elif sampling_method == 'uniform':
+                self.indices = self._get_uniform_indices(num_samples)
+            else:
+                raise ValueError("Invalid sampling_method. Must be either 'random' or 'uniform'.")
 
     def _get_proportional_indices(self, class_proportions, num_samples):
+
         class_counts = {k: int(num_samples * v) for k, v in class_proportions.items()}
         indices_by_class = {k: [] for k in self.reverse_class_labels.values()}
 
@@ -346,6 +341,34 @@ class CIFAR10Subsample(torch.utils.data.Dataset):
         random.shuffle(proportional_indices)
         return proportional_indices
 
+    def _get_uniform_indices(self, num_samples):
+        num_classes = len(self.class_labels)
+        samples_per_class = num_samples // num_classes
+        remaining_samples = num_samples % num_classes
+
+        indices_by_class = {k: [] for k in self.reverse_class_labels.values()}
+
+        for i, (_, label) in enumerate(self.cifar_dataset):
+            indices_by_class[label].append(i)
+
+        uniform_indices = []
+        for class_idx in self.reverse_class_labels.values():
+            uniform_indices += random.sample(indices_by_class[class_idx], samples_per_class)
+
+        # Add the remaining samples to the indices
+        for i in range(remaining_samples):
+            class_idx = i % num_classes
+            uniform_indices += random.sample(indices_by_class[class_idx], 1)
+
+        random.shuffle(uniform_indices)
+
+        return uniform_indices
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, index):
+        return self.cifar_dataset[self.indices[index]]
 
 def class_distribution_df(cifar10_subsample: CIFAR10Subsample) -> pd.DataFrame:
     """
@@ -447,3 +470,130 @@ def load_and_transform_images(img_dir):
     new_images = torch.stack(new_images)
 
     return new_images
+
+def get_transforms():
+    """
+    Returns a composed transform object to be applied on the CIFAR-10 dataset.
+
+    Returns:
+        transforms.Compose: A transform object that applies a series of transformations.
+    """
+    return transforms.Compose(
+        [transforms.ToTensor(),
+         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
+def create_trainloader(trainset, batch_size):
+    """
+    Creates a DataLoader for the training set.
+
+    Args:
+        trainset (Dataset): The training dataset.
+        batch_size (int): The number of samples per batch to load.
+
+    Returns:
+        torch.utils.data.DataLoader: The DataLoader for the training set.
+    """
+    return torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=0)
+
+def create_testloader(testset, batch_size):
+    """
+    Creates a DataLoader for the test set.
+
+    Args:
+        testset (Dataset): The test dataset.
+        batch_size (int): The number of samples per batch to load.
+
+    Returns:
+        torch.utils.data.DataLoader: The DataLoader for the test set.
+    """
+    return torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
+
+
+# @st.cache_resource
+# def load_cifar10(class_proportions, percentage=10, cat_proportion=0.1, batch_size=100):
+#     """
+#     Loads the CIFAR-10 dataset with a custom proportion of cat samples in the training set.
+#
+#     Args:
+#         percentage (int, optional): The percentage of the total dataset to use for the training set. Defaults to 10.
+#         cat_proportion (float, optional): The proportion of cat samples in the training set. Defaults to 0.1.
+#         batch_size (int, optional): The number of samples per batch to load. Defaults to 100.
+#         class_proportions (dict, optional): A dictionary containing the initial class proportions. If not provided,
+#                                             a default dictionary with equal proportions for all classes will be used.
+#
+#     Returns:
+#         tuple: A tuple containing the trainset, trainloader, testset, and testloader for the modified CIFAR-10 dataset.
+#     """
+#     transform = get_transforms()
+#     normalized_proportions = normalize_class_proportions(class_proportions, 'cat', cat_proportion)
+#
+#     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+#     testloader = create_testloader(testset, batch_size)
+#
+#     trainset = CIFAR10Subsample(root='./data', train=True, transform=transform, percentage=percentage,
+#                                 class_proportions=normalized_proportions)
+#     trainloader = create_trainloader(trainset, batch_size)
+#
+#     return trainset, trainloader, testset, testloader
+
+
+# def normalize_class_proportions(class_proportions, target_class, new_proportion):
+#     """
+#
+#     :param class_proportions:
+#     :param target_class:
+#     :param new_proportion:
+#     :return:
+#     """
+#     adjusted_proportions = class_proportions.copy()
+#     adjusted_proportions[target_class] = new_proportion
+#
+#     sum_proportions = sum(adjusted_proportions.values())
+#     normalized_proportions = {key: value / sum_proportions for key, value in adjusted_proportions.items()}
+#
+#     return normalized_proportions
+
+def load_cifar10_trainset(percentage=10, batch_size=16, class_proportions=None, sample_method=None):
+    """
+    Loads the CIFAR-10 training dataset with a custom proportion of cat samples.
+
+    Args:
+        percentage (int, optional): The percentage of the total dataset to use for the training set. Defaults to 10.
+        cat_proportion (float, optional): The proportion of cat samples in the training set. Defaults to 0.1.
+        batch_size (int, optional): The number of samples per batch to load. Defaults to 100.
+        class_proportions (dict, optional): A dictionary containing the initial class proportions. If not provided,
+                                            a default dictionary with equal proportions for all classes will be used.
+        sample_method (str, optional): either 'random' or 'uniform', determines the method that's used to subsample data
+
+    Returns:
+        tuple: A tuple containing the trainset and trainloader for the modified CIFAR-10 dataset.
+    """
+    transform = get_transforms()
+    # normalized_proportions = normalize_class_proportions(class_proportions, 'cat', cat_proportion)
+
+    trainset = CIFAR10Subsample(root='./data', train=True, transform=transform, percentage=percentage,
+                                sampling_method=sample_method)
+    trainloader = create_trainloader(trainset, batch_size)
+
+    return trainset, trainloader
+
+
+@st.cache_resource
+def load_cifar10_testset(batch_size=16):
+    """
+    Loads the CIFAR-10 test dataset.
+
+    Args:
+        batch_size (int, optional): The number of samples per batch to load. Defaults to 100.
+
+    Returns:
+        tuple: A tuple containing the testset and testloader for the CIFAR-10 dataset.
+    """
+    transform = get_transforms()
+
+    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+    testloader = create_testloader(testset, batch_size)
+
+    return testset, testloader
+
+
