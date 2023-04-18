@@ -103,24 +103,29 @@ def plot_metrics(metrics_history):
                                 step of dataset augmentation. Each dictionary should have the keys:
                                 'accuracy', 'precision', 'recall', and 'f1_score'.
 
+    Returns:
+        fig (matplotlib.figure.Figure): A matplotlib figure containing the plotted metrics.
+
     """
     percentages = [0, 25, 50, 75, 100]
-    plt.figure(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(12, 8))
 
     # Plot total accuracy
-    plt.plot(percentages, [metrics['accuracy'] for metrics in metrics_history], label='Accuracy')
+    ax.plot(percentages, [metrics['accuracy'] for metrics in metrics_history], label='Accuracy')
 
     # Plot average per-class metrics
-    plt.plot(percentages, [sum(metrics['precision']) / len(metrics['precision']) for metrics in metrics_history], label='Precision')
-    plt.plot(percentages, [sum(metrics['recall']) / len(metrics['recall']) for metrics in metrics_history], label='Recall')
-    plt.plot(percentages, [sum(metrics['f1_score']) / len(metrics['f1_score']) for metrics in metrics_history], label='F1 Score')
+    ax.plot(percentages, [sum(metrics['precision']) / len(metrics['precision']) for metrics in metrics_history], label='Precision')
+    ax.plot(percentages, [sum(metrics['recall']) / len(metrics['recall']) for metrics in metrics_history], label='Recall')
+    ax.plot(percentages, [sum(metrics['f1_score']) / len(metrics['f1_score']) for metrics in metrics_history], label='F1 Score')
 
-    plt.xlabel('Percentage of Supplementary Data Added')
-    plt.ylabel('Metric Value')
-    plt.title('Model Performance Metrics vs. Supplementary Data Added')
-    plt.legend()
-    plt.grid()
-    plt.show()
+    ax.set_xlabel('Percentage of Supplementary Data Added')
+    ax.set_ylabel('Metric Value')
+    ax.set_title('Model Performance Metrics vs. Supplementary Data Added')
+    ax.legend()
+    ax.grid()
+
+    return fig
+
 
 
 def calculate_metrics(model, dataloader, device, num_classes=10):
@@ -651,7 +656,7 @@ def page1():
     st.markdown("## CIFAR-10")
     st.markdown(" Let's take a look at the CIFAR-10 dataset")
     # Load the image using PIL
-    image_path = 'D:\\Projects\\syntheticDiffusion\\figures\\cifar10.png'
+    image_path = '..\\syntheticDiffusion\\figures\\cifar10.png'
     image = Image.open(image_path)
 
     # Display the image using Streamlit
@@ -682,7 +687,7 @@ def page1():
     CIFAR-10 dataset. The most important change is that we have to downsample our 512x512 images to 32x32""")
 
     # Load the image using PIL
-    image_path = 'D:\\Projects\\syntheticDiffusion\\figures\\cat_to_cat.png'
+    image_path = '..\\syntheticDiffusion\\figures\\cat_to_cat.png'
     image = Image.open(image_path)
 
     # Display the image using Streamlit
@@ -780,7 +785,7 @@ def page3():
             return averaged_metrics
 
         percentages = [0, 25, 50, 75, 100]
-        num_trials = 10
+        num_trials = 3
 
         # Assuming you have your trainset, trainloader, testloader, and device set up
         all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device)
@@ -788,7 +793,8 @@ def page3():
 
         # Plot the metrics
         metrics_history = [averaged_metrics[p] for p in percentages]
-        plot_metrics(metrics_history)
+        fig = plot_metrics(metrics_history)
+        st.pyplot(fig)
 
 
 def page4():
@@ -813,7 +819,7 @@ def page4():
     training set that was created to produce the previous bar char""")
 
     # Check if the cifar10_base_model.pt exists
-    model_exists = os.path.exists("D:\\Projects\\syntheticDiffusion\\data\\models\\cifar10_base_model.pt")
+    model_exists = os.path.exists("..\\syntheticDiffusion\\data\\models\\cifar10_base_model.pt")
 
     # Create two columns for placing the buttons side by side
     col1, col2 = st.columns(2)
@@ -827,7 +833,7 @@ def page4():
         if col2.button('Use existing CIFAR-10 base model'):
             # Instantiate the model and load the state_dict from the file
             st.session_state.cifar_net = Net()
-            st.session_state.cifar_net.load_state_dict(torch.load("D:\\Projects\\syntheticDiffusion\\data\\models\\cifar10_base_model.pt"))
+            st.session_state.cifar_net.load_state_dict(torch.load("..\\syntheticDiffusion\\data\\models\\cifar10_base_model.pt"))
             st.session_state.cifar_net.to(device)
 
             # Calculate the metrics for the existing model
@@ -874,7 +880,7 @@ def page4():
     we should start adding our own synthetically created cat images to the training set to suppliment it!""")
 
     # ... (Load and transform synthetic images)
-    synthetic_imgDir = "D:\\Projects\\syntheticDiffusion\\data\\synthetic_cats\\"
+    synthetic_imgDir = "..\\syntheticDiffusion\\data\\synthetic_cats\\"
     custom_images = load_and_transform_images(synthetic_imgDir)
     custom_labels = len(custom_images) * [3]  # Your assigned labels(cat)
 
