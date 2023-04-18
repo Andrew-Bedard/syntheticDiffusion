@@ -820,8 +820,8 @@ def page4():
     choose to load the CIFAR-10 base model that was included in the repository, or train a new one yourself on the 
     training set that was created to produce the previous bar char""")
 
-    # Check if the cifar10_base_model.pt exists
-    model_exists = os.path.exists("..\\syntheticDiffusion\\data\\models\\cifar10_base_model.pt")
+    # Check if the cifar10_base_model_test.pt exists
+    model_exists = os.path.exists("data/models/cifar10_base_model_test.pt")
 
     # Create two columns for placing the buttons side by side
     col1, col2 = st.columns(2)
@@ -835,7 +835,7 @@ def page4():
         if col2.button('Use existing CIFAR-10 base model'):
             # Instantiate the model and load the state_dict from the file
             st.session_state.cifar_net = Net()
-            st.session_state.cifar_net.load_state_dict(torch.load("..\\syntheticDiffusion\\data\\models\\cifar10_base_model.pt"))
+            st.session_state.cifar_net.load_state_dict(torch.load("data/models/cifar10_base_model_test.pt"))
             st.session_state.cifar_net.to(device)
 
             # Calculate the metrics for the existing model
@@ -992,7 +992,7 @@ def page5():
         st.download_button(
             label="Download CIFAR-10 base model",
             data=model_binary,
-            file_name="cifar10_base_model.pt",
+            file_name="cifar10_base_model_test.pt",
             mime="application/octet-stream"
         )
 
