@@ -553,6 +553,7 @@ def create_testloader(testset, batch_size):
 #
 #     return normalized_proportions
 
+@st.cache_resource
 def load_cifar10_trainset(percentage=10, batch_size=16, class_proportions=None, sample_method=None):
     """
     Loads the CIFAR-10 training dataset with a custom proportion of cat samples.
@@ -578,7 +579,6 @@ def load_cifar10_trainset(percentage=10, batch_size=16, class_proportions=None, 
     return trainset, trainloader
 
 
-@st.cache_resource
 def load_cifar10_testset(batch_size=16):
     """
     Loads the CIFAR-10 test dataset.

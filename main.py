@@ -1,6 +1,4 @@
 import torch
-import torchvision
-import torchvision.transforms as transforms
 from PIL import Image
 import os
 import streamlit as st
@@ -12,62 +10,6 @@ from src.viewer.visualization_utils import bar_chart_classes, plot_metrics, plot
 from src.model.model import train_and_display, calculate_metrics, Net
 
 torch.manual_seed(0)
-
-
-
-# @st.cache_resource
-# def load_cifar10(percentage=10, cat_proportion=0.1):
-#     """
-#
-#     :param percentage:
-#     :param cat_proportion:
-#     :return:
-#     """
-#
-#     def normalize_class_proportions(class_proportions, target_class, new_proportion):
-#         """
-#
-#         :param class_proportions:
-#         :param target_class:
-#         :param new_proportion:
-#         :return:
-#         """
-#         adjusted_proportions = class_proportions.copy()
-#         adjusted_proportions[target_class] = new_proportion
-#
-#         sum_proportions = sum(adjusted_proportions.values())
-#         normalized_proportions = {key: value / sum_proportions for key, value in adjusted_proportions.items()}
-#
-#         return normalized_proportions
-#
-#     transform = transforms.Compose(
-#         [transforms.ToTensor(),
-#          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-#
-#     class_proportions = {'airplane': 0.1,
-#                          'automobile': 0.1,
-#                          'bird': 0.1,
-#                          'cat': cat_proportion,  # Pass the cat_proportion here
-#                          'deer': 0.1,
-#                          'dog': 0.1,
-#                          'frog': 0.1,
-#                          'horse': 0.1,
-#                          'ship': 0.1,
-#                          'truck': 0.1
-#                          }
-#
-#     # Normalize the class proportions based on the new cat_proportion
-#     normalized_proportions = normalize_class_proportions(class_proportions, 'cat', cat_proportion)
-#
-#     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
-#     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
-#
-#     trainset = CIFAR10Subsample(root='./data', train=True, transform=transform, percentage=percentage,
-#                                 class_proportions=class_proportions)
-#     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=0)
-#
-#     return trainset, trainloader, testset, testloader
-
 
 # These are the classes in the cifar-10 dataset (in proper order)
 classes = ('plane', 'car', 'bird', 'cat',
@@ -81,7 +23,7 @@ cifar_percentage = 10
 device = 'cuda' if torch.cuda.is_available() else 'cpu'  # If gpu exists use cuda
 st.session_state.testset, st.session_state.testloader = load_cifar10_testset(batch_size)
 
-def page1():
+def intro_page():
     st.title("Background")
     st.markdown("## What's it all about")
     st.markdown("""Welcome to this demonstration of using advanced techniques in artificial intelligence to generate 
@@ -133,14 +75,13 @@ def page1():
     st.image(image, caption='Resize of synthetic cat images to CIFAR-10 format', use_column_width=True)
 
 
-def page2():
+def synCats_page():
     st.title("Generating Synthetic Images of cats")
     st.markdown("")
     st.markdown("[Stable Diffusion Web UI](https://github.com/AUTOMATIC1111/stable-diffusion-webui)",
                 unsafe_allow_html=True)
 
-
-# def page3():
+# def preCalc_page():
 #     st.markdown("WARNING! Depending on how many trails you select, pressing the following button will take a long "
 #                 "time to complete")
 #     num_trials = st.selectbox('Select number of trails to run per % holdout of cat images:', list(range(1, 11)))
@@ -239,13 +180,10 @@ def page2():
 #
 #     if 'batch_figure' in st.session_state:
 #         st.pyplot(st.session_state.batch_figure)
-def page3():
+def preCalc_page():
     st.markdown("DUMMY")
 
-def page4():
-    # trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
-    trainset, trainloader = load_cifar10_trainset(cifar_percentage, batch_size, sample_method='uniform')
-    labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+def handsOn_page():
 
     st.title("Experiment with Synthetic Diffusion")
 
@@ -256,6 +194,16 @@ def page4():
                 "performance when we are in a situation where we don't have all the data we would like, so right away "
                 "let's subsample the CIFAR-10 dataset uniformly to 10% of it's original size")
     st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
+
+    st.markdown("Let's do some sampling")
+    # Create a horizontal container
+    container = st.container()
+    sampling_method_options = ["uniform", "random"]
+    selected_sampling_method = container.radio("Select sampling method", sampling_method_options, index=0)
+    st.write(f"Selected sampling method: {selected_sampling_method}")
+
+    trainset, trainloader = load_cifar10_trainset(cifar_percentage, batch_size, sample_method=selected_sampling_method)
+    labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
     class_counts_df = class_distribution_df(trainset)
     fig = bar_chart_classes(class_counts_df)
     st.pyplot(fig)
@@ -264,8 +212,8 @@ def page4():
     choose to load the CIFAR-10 base model that was included in the repository, or train a new one yourself on the 
     training set that was created to produce the previous bar char""")
 
-    # Check if the cifar10_base_model_test.pt exists
-    model_exists = os.path.exists("data/models/cifar10_base_model_test.pt")
+    # Check if the cifar10_base_model.pt exists
+    model_exists = os.path.exists("data/models/cifar10_base_model.pt")
 
     # Create two columns for placing the buttons side by side
     col1, col2 = st.columns(2)
@@ -290,7 +238,8 @@ def page4():
     # Show the net accuracy for the base model
     if 'cifar_base' in st.session_state:
         st.write(f"CIFAR-10 model accuracy: {st.session_state.cifar_base['metrics']['accuracy'] * 100:.2f}%")
-        basecifar_fig = plot_single_per_class_accuracy(st.session_state.cifar_base['metrics']['per_class_accuracy'], labels,
+        basecifar_fig = plot_single_per_class_accuracy(st.session_state.cifar_base['metrics']['per_class_accuracy'],
+                                                       labels,
                                                        'CFIAR-10 base model')
         st.pyplot(basecifar_fig)
 
@@ -302,7 +251,8 @@ def page4():
     # Create a button to decrease cat samples
     # If the button is pressed, show the slider and store its value in the session state
     st.markdown("Let's take a look at the distribution of classes for our subsampled CIFAR-10 dataset")
-    cat_proportion = st.slider("Total proportion of cat images:", min_value=0.0, max_value=0.09, value=0.05, step=0.01)
+    cat_proportion = st.slider("% of total cat images to keep:", min_value=0, max_value=90, value=50, step=10)
+    cat_proportion = max(0, cat_proportion/100)
     st.session_state.cat_proportion = cat_proportion
     st.session_state.cat_num = cat_proportion * 10 * 500  # TODO: this should not be hardcoded like it is
 
@@ -418,8 +368,13 @@ def page4():
     #     st.session_state.prev_custom_net_accuracy = metrics['accuracy']
     #     st.session_state.prev_custom_net_per_class_accuracy = metrics['per_class_accuracy']
 
+def comparison_page():
+    st.markdown("Comparison with other methods like traditional cropping flipping...")
 
-def page5():
+def network_page():
+    st.markdown("Network")
+
+def debugging_page():
     # This page exists for debugging purposes
 
     import torch
@@ -439,24 +394,29 @@ def page5():
         st.download_button(
             label="Download CIFAR-10 base model",
             data=model_binary,
-            file_name="cifar10_base_model_test.pt",
+            file_name="cifar10_base_model.pt",
             mime="application/octet-stream"
         )
+
+
 
 def main():
     st.sidebar.title("Navigation")
     selected_page = st.sidebar.radio("Go to",
-                                     ["Introduction", "Synthetic Cats", "Pre-calculated results", "Hands-on", "Debugging"])
+                                     ["Introduction", "Synthetic Cats", "Network", "Pre-calculated results", "Hands-on",
+                                      "Comparison", "Debugging"])
 
     st.markdown("# Synthetic Diffusion")
 
     # Mapping of pages to their respective functions
     pages = {
-        "Introduction": page1,
-        "Synthetic Cats": page2,
-        "Pre-calculated results": page3,
-        "Hands-on": page4,
-        "Debugging": page5
+        "Introduction": intro_page,
+        "Synthetic Cats": synCats_page,
+        "Network": network_page,
+        "Pre-calculated results": preCalc_page,
+        "Hands-on": handsOn_page,
+        "Comparison": comparison_page,
+        "Debugging": debugging_page
     }
 
     # Call the function corresponding to the selected page
