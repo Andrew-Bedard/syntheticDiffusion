@@ -323,7 +323,9 @@ class CIFAR10Subsample(torch.utils.data.Dataset):
             elif sampling_method == 'uniform':
                 self.indices = self._get_uniform_indices(num_samples)
             else:
-                raise ValueError("Invalid sampling_method. Must be either 'random' or 'uniform'.")
+                # raise ValueError("Invalid sampling_method. Must be either 'random' or 'uniform'.")
+                self.indices = self._get_uniform_indices(num_samples)  # I know this is redundant,
+                # but I want to keep this last else loop in case I want to create new sampling methods
 
     def _get_proportional_indices(self, class_proportions, num_samples):
 

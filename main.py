@@ -1,13 +1,17 @@
+import pandas as pd
 import torch
 from PIL import Image
 import os
 import streamlit as st
+import numpy as np
+from torch.utils.data import Subset
+import random
 
 from src.data.data_utils import CIFAR10Subsample, class_distribution_df, CustomDataset, load_and_transform_images, \
     load_cifar10_testset, load_cifar10_trainset
 from src.viewer.visualization_utils import bar_chart_classes, plot_metrics, plot_per_class_accuracy, \
     plot_single_per_class_accuracy
-from src.model.model import train_and_display, calculate_metrics, Net
+from src.model.model import train_and_display, calculate_metrics, Net, train
 
 torch.manual_seed(0)
 
@@ -81,107 +85,302 @@ def synCats_page():
     st.markdown("[Stable Diffusion Web UI](https://github.com/AUTOMATIC1111/stable-diffusion-webui)",
                 unsafe_allow_html=True)
 
-# def preCalc_page():
-#     st.markdown("WARNING! Depending on how many trails you select, pressing the following button will take a long "
-#                 "time to complete")
-#     num_trials = st.selectbox('Select number of trails to run per % holdout of cat images:', list(range(1, 11)))
-#     if st.button("Perform batch training/metrics"):
-#
-#         trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
-#
-#         st.title("Pre-calculated results")
-#
-#         from torch.utils.data import Subset
-#         import random
-#
-#         def train_cifar_model_with_percentage(percentage, trainset, trainloader, device):
-#             # Find the indices of the cat images in the trainset
-#             cat_indices = [i for i, (image, label) in enumerate(trainset) if
-#                            label == 3]  # Assuming cat class has a label of 3
-#
-#             # Calculate the number of cat images to include in the subsampled dataset
-#             num_cat_images = int(len(cat_indices) * (percentage / 100))
-#
-#             # Randomly choose the cat images to include
-#             chosen_cat_indices = random.sample(cat_indices, num_cat_images)
-#
-#             # Find the indices of the non-cat images in the trainset
-#             non_cat_indices = [i for i in range(len(trainset)) if i not in cat_indices]
-#
-#             # Combine the chosen cat image indices with the non-cat image indices
-#             new_trainset_indices = non_cat_indices + chosen_cat_indices
-#
-#             # Create a new Subset with the specified percentage of cat images
-#             new_trainset = Subset(trainset, new_trainset_indices)
-#
-#             # Create a new DataLoader with the modified trainset
-#             new_trainloader = torch.utils.data.DataLoader(new_trainset, batch_size=trainloader.batch_size, shuffle=True,
-#                                                           num_workers=trainloader.num_workers)
-#
-#             # Train the model using the modified trainloader
-#             model = Net()
-#             model.to(device)
-#             train(model, new_trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001,
-#                   momentum=0.9)
-#
-#             return model
-#
-#         def train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device):
-#             all_metrics = {p: [] for p in percentages}
-#
-#             for p in percentages:
-#                 print(p)
-#                 for _ in range(num_trials):
-#                     model = train_cifar_model_with_percentage(p, trainset, trainloader, device)
-#                     metrics = calculate_metrics(model, testloader, device)
-#                     all_metrics[p].append(metrics)
-#
-#             return all_metrics
-#
-#         def average_metrics(all_metrics, num_trials):
-#             averaged_metrics = {}
-#
-#             for p in all_metrics:
-#                 averaged = {
-#                     'accuracy': 0,
-#                     'per_class_accuracy': np.zeros(10),
-#                     'precision': np.zeros(10),
-#                     'recall': np.zeros(10),
-#                     'f1_score': np.zeros(10)
-#                 }
-#
-#                 for metrics in all_metrics[p]:
-#                     averaged['accuracy'] += metrics['accuracy']
-#                     averaged['per_class_accuracy'] += np.array(metrics['per_class_accuracy'])
-#                     averaged['precision'] += np.array(metrics['precision'])
-#                     averaged['recall'] += np.array(metrics['recall'])
-#                     averaged['f1_score'] += np.array(metrics['f1_score'])
-#
-#                 averaged['accuracy'] /= num_trials
-#                 averaged['per_class_accuracy'] /= num_trials
-#                 averaged['precision'] /= num_trials
-#                 averaged['recall'] /= num_trials
-#                 averaged['f1_score'] /= num_trials
-#
-#                 averaged_metrics[p] = averaged
-#
-#             return averaged_metrics
-#
-#         percentages = [0, 25, 50, 75, 100]
-#         # num_trials = 10
-#
-#         # Assuming you have your trainset, trainloader, testloader, and device set up
-#         all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device)
-#         averaged_metrics = average_metrics(all_metrics, num_trials)
-#
-#         # Plot the metrics
-#         metrics_history = [averaged_metrics[p] for p in percentages]
-#         st.session_state.batch_figure = plot_metrics(metrics_history)
-#
-#     if 'batch_figure' in st.session_state:
-#         st.pyplot(st.session_state.batch_figure)
 def preCalc_page():
-    st.markdown("DUMMY")
+
+
+    # def train_cifar_model_with_percentage(percentage, trainset, trainloader, device):
+    #     """
+    #     Trains a CIFAR-10 classifier model with a specified percentage of cat images in the training dataset.
+    #
+    #     This function creates a new Subset of the training dataset with the specified percentage of cat images,
+    #     then trains a new model using the modified dataset.
+    #
+    #     Args:
+    #         percentage (float): The percentage of cat images to include in the training dataset, in the range [0, 100].
+    #         trainset (torch.utils.data.Dataset): The original CIFAR-10 training dataset.
+    #         trainloader (torch.utils.data.DataLoader): The original DataLoader for the CIFAR-10 training dataset.
+    #         device (torch.device): The device to use for training the model (e.g., 'cpu' or 'cuda').
+    #
+    #     Returns:
+    #         model (Net): The trained CIFAR-10 classifier model.
+    #     """
+    #     # Find the indices of the cat images in the trainset
+    #     cat_indices = [i for i, (image, label) in enumerate(trainset) if
+    #                    label == 3]  # Assuming cat class has a label of 3
+    #
+    #     # Calculate the number of cat images to include in the subsampled dataset
+    #     num_cat_images = int(len(cat_indices) * (percentage / 100))
+    #
+    #     # Randomly choose the cat images to include
+    #     chosen_cat_indices = random.sample(cat_indices, num_cat_images)
+    #
+    #     # Find the indices of the non-cat images in the trainset
+    #     non_cat_indices = [i for i in range(len(trainset)) if i not in cat_indices]
+    #
+    #     # Combine the chosen cat image indices with the non-cat image indices
+    #     new_trainset_indices = non_cat_indices + chosen_cat_indices
+    #
+    #     # Create a new Subset with the specified percentage of cat images
+    #     new_trainset = Subset(trainset, new_trainset_indices)
+    #
+    #     # Create a new DataLoader with the modified trainset
+    #     new_trainloader = torch.utils.data.DataLoader(new_trainset, batch_size=trainloader.batch_size, shuffle=True,
+    #                                                   num_workers=trainloader.num_workers)
+    #
+    #     # Train the model using the modified trainloader
+    #     model = Net()
+    #     model.to(device)
+    #     train(model, new_trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001,
+    #           momentum=0.9)
+    #
+    #     return model
+    #
+    #
+    # def train_cifar_model_with_custom_cats(percentage, trainset, custom_images, trainloader, device):
+    #     # Find the indices of the cat images in the trainset
+    #     cat_indices = [i for i, (image, label) in enumerate(trainset) if
+    #                    label == 3]  # Assuming cat class has a label of 3
+    #
+    #     # Find the indices of the non-cat images in the trainset
+    #     non_cat_indices = [i for i in range(len(trainset)) if i not in cat_indices]
+    #
+    #     # Extract non-cat images and labels
+    #     non_cat_images = [trainset[i][0] for i in non_cat_indices]
+    #     non_cat_labels = [trainset[i][1] for i in non_cat_indices]
+    #
+    #     # Calculate the number of synthetic cat images to include
+    #     num_synthetic_cat_images = int(len(cat_indices) * (percentage / 100))
+    #
+    #     # Create custom labels (all cat obviously)
+    #     custom_labels = len(custom_images) * [3]
+    #
+    #     # Randomly choose the synthetic cat images to include
+    #     indices = torch.randperm(len(custom_images))[:num_synthetic_cat_images]
+    #     chosen_synthetic_cat_images = custom_images[indices]
+    #     chosen_synthetic_cat_labels = [custom_labels[i] for i in indices.tolist()]
+    #
+    #     # Stack non-cat images and chosen synthetic cat images
+    #     non_cat_images = torch.stack(non_cat_images)
+    #
+    #     # Concatenate non-cat images and chosen synthetic cat images
+    #     new_trainset_images = torch.cat((non_cat_images, chosen_synthetic_cat_images), dim=0)
+    #
+    #     # Combine the non-cat labels with the chosen synthetic cat labels
+    #     new_trainset_labels = non_cat_labels + chosen_synthetic_cat_labels
+    #
+    #     # Create a new custom dataset with the specified percentage of synthetic cat images
+    #     new_trainset = CustomDataset(new_trainset_images, new_trainset_labels)
+    #
+    #     # Create a new DataLoader with the modified trainset
+    #     new_trainloader = torch.utils.data.DataLoader(new_trainset, batch_size=trainloader.batch_size, shuffle=True,
+    #                                                   num_workers=trainloader.num_workers)
+    #
+    #     # Train the model using the modified trainloader
+    #     model = Net()
+    #     model.to(device)
+    #     train(model, new_trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001, momentum=0.9)
+    #
+    #     return model
+
+    def train_cifar_model_with_cats(percentage, trainset, trainloader, device, custom_images=None):
+        # Find the indices of the cat images in the trainset
+        cat_indices = [i for i, (image, label) in enumerate(trainset) if
+                       label == 3]  # Assuming cat class has a label of 3
+
+        # Find the indices of the non-cat images in the trainset
+        non_cat_indices = [i for i in range(len(trainset)) if i not in cat_indices]
+
+        # Extract non-cat images and labels
+        non_cat_images = [trainset[i][0] for i in non_cat_indices]
+        non_cat_labels = [trainset[i][1] for i in non_cat_indices]
+
+        # Calculate the number of cat images to include
+        num_cat_images = int(len(cat_indices) * (percentage / 100))
+
+        if num_cat_images > 0:
+            if custom_images is None:
+                # Randomly choose the cat images to include
+                chosen_cat_indices = random.sample(cat_indices, num_cat_images)
+                chosen_cat_images = [trainset[i][0] for i in chosen_cat_indices]
+                chosen_cat_labels = [trainset[i][1] for i in chosen_cat_indices]
+
+                # Convert chosen_cat_images to a tensor
+                chosen_cat_images = torch.stack(chosen_cat_images)
+            else:
+                # Create custom labels (all cat obviously)
+                custom_labels = len(custom_images) * [3]
+
+                # Randomly choose the synthetic cat images to include
+                indices = torch.randperm(len(custom_images))[:num_cat_images]
+                chosen_cat_images = custom_images[indices]
+                chosen_cat_labels = [custom_labels[i] for i in indices.tolist()]
+
+            # Stack non-cat images and chosen cat images
+            non_cat_images = torch.stack(non_cat_images)
+
+            # Concatenate non-cat images and chosen cat images
+            new_trainset_images = torch.cat((non_cat_images, chosen_cat_images), dim=0)
+
+            # Combine the non-cat labels with the chosen cat labels
+            new_trainset_labels = non_cat_labels + chosen_cat_labels
+        else:
+            new_trainset_images = torch.stack(non_cat_images)
+            new_trainset_labels = non_cat_labels
+
+        # Create a new custom dataset with the specified percentage of cat images
+        new_trainset = CustomDataset(new_trainset_images, new_trainset_labels)
+
+        # Create a new DataLoader with the modified trainset
+        new_trainloader = torch.utils.data.DataLoader(new_trainset, batch_size=trainloader.batch_size, shuffle=True,
+                                                      num_workers=trainloader.num_workers)
+
+        # Train the model using the modified trainloader
+        model = Net()
+        model.to(device)
+        train(model, new_trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001, momentum=0.9)
+
+        return model
+
+    def train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device, custom_images=None):
+        all_metrics = {p: [] for p in percentages}
+
+        for p in percentages:
+            print(p)
+            for _ in range(num_trials):
+                if custom_images is None:
+                    model = train_cifar_model_with_cats(p, trainset, trainloader, device)
+                else:
+                    model = train_cifar_model_with_cats(p, trainset, trainloader, device, custom_images=custom_images)
+
+                metrics = calculate_metrics(model, testloader, device)
+                all_metrics[p].append(metrics)
+
+        return all_metrics
+
+    def average_metrics(all_metrics, num_trials):
+        averaged_metrics = {}
+
+        for p in all_metrics:
+            averaged = {
+                'accuracy': 0,
+                'per_class_accuracy': np.zeros(10),
+                'precision': np.zeros(10),
+                'recall': np.zeros(10),
+                'f1_score': np.zeros(10)
+            }
+
+            for metrics in all_metrics[p]:
+                averaged['accuracy'] += metrics['accuracy']
+                averaged['per_class_accuracy'] += np.array(metrics['per_class_accuracy'])
+                averaged['precision'] += np.array(metrics['precision'])
+                averaged['recall'] += np.array(metrics['recall'])
+                averaged['f1_score'] += np.array(metrics['f1_score'])
+
+            averaged['accuracy'] /= num_trials
+            averaged['per_class_accuracy'] /= num_trials
+            averaged['precision'] /= num_trials
+            averaged['recall'] /= num_trials
+            averaged['f1_score'] /= num_trials
+
+            averaged_metrics[p] = averaged
+
+        return averaged_metrics
+
+
+    st.markdown("WARNING! Depending on how many trails you select, pressing the following button will take a long "
+                "time to complete")
+    num_trials = st.selectbox('Select number of trails to run per % holdout of cat images:', list(range(1, 11)))
+    if st.button("Perform batch training/metrics for real cats"):
+
+        # trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
+        trainset, trainloader = load_cifar10_trainset()
+        testset, testloader = load_cifar10_testset()
+
+        st.title("Pre-calculated results")
+
+        percentages = [0, 20, 40, 60, 80, 100]
+        # percentages = [0, 10]
+        # num_trials = 10
+
+        # Assuming you have your trainset, trainloader, testloader, and device set up
+        all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device)
+        averaged_metrics = average_metrics(all_metrics, num_trials)
+
+        metrics_df = pd.DataFrame(averaged_metrics)
+        metrics_df.to_csv('data/precalc_metrics_real1.csv')  # TODO: this does not save the correct name for the first
+        # column, has to edited manually as 'metric'
+        st.dataframe(metrics_df)
+
+    if st.button("Perform batch training/metrics for synthetic cats"):
+
+        # trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
+        trainset, trainloader = load_cifar10_trainset()
+        testset, testloader = load_cifar10_testset()
+
+        st.title("Pre-calculated results")
+
+        percentages = [0, 20, 40, 60, 80, 100]
+        # percentages = [0, 10]
+        # num_trials = 10
+
+        synthetic_imgDir = "..\\syntheticDiffusion\\data\\synthetic_cats\\"
+        custom_images = load_and_transform_images(synthetic_imgDir)
+
+        # Assuming you have your trainset, trainloader, testloader, and device set up
+        all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device, custom_images=custom_images)
+        averaged_metrics = average_metrics(all_metrics, num_trials)
+
+        metrics_df = pd.DataFrame(averaged_metrics)
+        metrics_df.to_csv('data/precalc_metrics_synthetic1.csv')
+        st.dataframe(metrics_df)
+
+
+    # if 'batch_figure' in st.session_state:
+    #     st.pyplot(st.session_state.batch_figure)
+
+# def preCalc_page():
+#
+#     df = pd.read_csv("data/test.csv")
+#     import plotly.graph_objects as go
+#
+#     # Function to plot the line plot for each metric
+#     def plot_metric(metric_name, class_index):
+#         fig = go.Figure()
+#
+#         for i in range(10):  # Assuming there are 10 classes in the CIFAR-10 dataset
+#             fig.add_trace(go.Scatter(x=df.columns[1:],
+#                                      y=[float(x.strip()[1:-1].split()[i]) for x in
+#                                         df.loc[df['metric'] == metric_name].values[0][1:]],
+#                                      mode='lines+markers',
+#                                      name=f'Class {i}'))
+#
+#         fig.update_layout(title=f'{metric_name} for Class {class_index} across Models',
+#                           xaxis_title='Percentage of Cat Images',
+#                           yaxis_title=f'{metric_name}')
+#
+#         return fig
+#
+#     # Display line plots for each metric
+#     st.plotly_chart(plot_metric('precision', 0))
+#     st.plotly_chart(plot_metric('recall', 0))
+#     st.plotly_chart(plot_metric('f1_score', 0))
+#
+#     def plot_accuracy():
+#         fig = go.Figure()
+#
+#         fig.add_trace(go.Scatter(x=df.columns[1:],
+#                                  y=df.loc[df['metric'] == 'accuracy'].values[0][1:],
+#                                  mode='lines+markers',
+#                                  name='Accuracy'))
+#
+#         fig.update_layout(title='Overall Accuracy across Models',
+#                           xaxis_title='Percentage of Cat Images',
+#                           yaxis_title='Accuracy')
+#
+#         return fig
+#
+#     st.plotly_chart(plot_accuracy())
+
 
 def handsOn_page():
 
@@ -402,22 +601,23 @@ def debugging_page():
 
 def main():
     st.sidebar.title("Navigation")
-    selected_page = st.sidebar.radio("Go to",
-                                     ["Introduction", "Synthetic Cats", "Network", "Pre-calculated results", "Hands-on",
-                                      "Comparison", "Debugging"])
-
-    st.markdown("# Synthetic Diffusion")
 
     # Mapping of pages to their respective functions
     pages = {
         "Introduction": intro_page,
         "Synthetic Cats": synCats_page,
-        "Network": network_page,
+        #"Network": network_page,
         "Pre-calculated results": preCalc_page,
         "Hands-on": handsOn_page,
         "Comparison": comparison_page,
         "Debugging": debugging_page
     }
+
+    page_list = list(pages.keys())
+
+    selected_page = st.sidebar.radio("Go to", page_list)
+
+    st.markdown("# Synthetic Diffusion")
 
     # Call the function corresponding to the selected page
     pages[selected_page]()
