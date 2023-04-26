@@ -554,3 +554,51 @@ def load_cifar10_testset(batch_size=16):
     return testset, testloader
 
 
+def average_metrics(all_metrics, num_trials):
+    """
+    Computes the average evaluation metrics across all trials for each percentage of cat images in the training dataset.
+
+    This function takes the evaluation metrics dictionary produced by the `train_and_evaluate_models` function and
+    calculates the average metrics across all trials for each percentage of cat images.
+
+    Args:
+        all_metrics (dict): A dictionary containing the evaluation metrics for each model, keyed by the percentage
+                            of cat images in the training dataset. Each value in the dictionary is a list of metrics
+                            dictionaries, one for each trial.
+        num_trials (int): The number of trials for each model.
+
+    Returns:
+        averaged_metrics (dict): A dictionary containing the averaged evaluation metrics for each model, keyed by the
+                                 percentage of cat images in the training dataset. Each value in the dictionary is a
+                                 metrics dictionary with averaged values for accuracy, per_class_accuracy, precision,
+                                 recall, and f1_score.
+    """
+    averaged_metrics = {}
+
+    for p in all_metrics:
+        averaged = {
+            'accuracy': 0,
+            'per_class_accuracy': np.zeros(10),
+            'precision': np.zeros(10),
+            'recall': np.zeros(10),
+            'f1_score': np.zeros(10)
+        }
+
+        for metrics in all_metrics[p]:
+            averaged['accuracy'] += metrics['accuracy']
+            averaged['per_class_accuracy'] += np.array(metrics['per_class_accuracy'])
+            averaged['precision'] += np.array(metrics['precision'])
+            averaged['recall'] += np.array(metrics['recall'])
+            averaged['f1_score'] += np.array(metrics['f1_score'])
+
+        averaged['accuracy'] /= num_trials
+        averaged['per_class_accuracy'] /= num_trials
+        averaged['precision'] /= num_trials
+        averaged['recall'] /= num_trials
+        averaged['f1_score'] /= num_trials
+
+        averaged_metrics[p] = averaged
+
+    return averaged_metrics
+
+

@@ -7,6 +7,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import streamlit as st
+from src.data.data_utils import CustomDataset
+import random
 
 # Define a callback function to update the progress bar for model training
 def update_progress(progress_bar, progress):
@@ -203,3 +205,124 @@ class Net(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+
+def train_cifar_model_with_cats(percentage, trainset, trainloader, device, epochs=30, custom_images=None):
+    """
+    Trains a CIFAR-10 classifier model with a specified percentage of cat images in the training dataset,
+    either using original cat images or custom synthetic cat images.
+
+    This function creates a new custom dataset with the specified percentage of cat images, then trains
+    a new model using the modified dataset. If custom_images is provided, it will use the synthetic cat
+    images instead of the original cat images from the trainset.
+
+    Args:
+        percentage (float): The percentage of cat images to include in the training dataset, in the range [0, 100].
+        trainset (torch.utils.data.Dataset): The original CIFAR-10 training dataset.
+        trainloader (torch.utils.data.DataLoader): The original DataLoader for the CIFAR-10 training dataset.
+        device (torch.device): The device to use for training the model (e.g., 'cpu' or 'cuda').
+        custom_images (torch.tensor, optional): A tensor containing custom synthetic cat images. If provided,
+                                                the function will use these images instead of the original cat
+                                                images from the trainset.
+
+    Returns:
+        model (Net): The trained CIFAR-10 classifier model.
+    """
+    # Find the indices of the cat images in the trainset
+    cat_indices = [i for i, (image, label) in enumerate(trainset) if
+                   label == 3]  # Assuming cat class has a label of 3
+
+    # Find the indices of the non-cat images in the trainset
+    non_cat_indices = [i for i in range(len(trainset)) if i not in cat_indices]
+
+    # Extract non-cat images and labels
+    non_cat_images = [trainset[i][0] for i in non_cat_indices]
+    non_cat_labels = [trainset[i][1] for i in non_cat_indices]
+
+    # Calculate the number of cat images to include
+    num_cat_images = int(len(cat_indices) * (percentage / 100))
+
+    if num_cat_images > 0:
+        if custom_images is None:
+            # Randomly choose the cat images to include
+            chosen_cat_indices = random.sample(cat_indices, num_cat_images)
+            chosen_cat_images = [trainset[i][0] for i in chosen_cat_indices]
+            chosen_cat_labels = [trainset[i][1] for i in chosen_cat_indices]
+
+            # Convert chosen_cat_images to a tensor
+            chosen_cat_images = torch.stack(chosen_cat_images)
+        else:
+            # Create custom labels (all cat obviously)
+            custom_labels = len(custom_images) * [3]
+
+            # Randomly choose the synthetic cat images to include
+            indices = torch.randperm(len(custom_images))[:num_cat_images]
+            chosen_cat_images = custom_images[indices]
+            chosen_cat_labels = [custom_labels[i] for i in indices.tolist()]
+
+        # Stack non-cat images and chosen cat images
+        non_cat_images = torch.stack(non_cat_images)
+
+        # Concatenate non-cat images and chosen cat images
+        new_trainset_images = torch.cat((non_cat_images, chosen_cat_images), dim=0)
+
+        # Combine the non-cat labels with the chosen cat labels
+        new_trainset_labels = non_cat_labels + chosen_cat_labels
+    else:
+        new_trainset_images = torch.stack(non_cat_images)
+        new_trainset_labels = non_cat_labels
+
+    # Create a new custom dataset with the specified percentage of cat images
+    new_trainset = CustomDataset(new_trainset_images, new_trainset_labels)
+
+    # Create a new DataLoader with the modified trainset
+    new_trainloader = torch.utils.data.DataLoader(new_trainset, batch_size=trainloader.batch_size, shuffle=True,
+                                                  num_workers=trainloader.num_workers)
+
+    # Train the model using the modified trainloader
+    model = Net()
+    model.to(device)
+    train(model, new_trainloader, device, epochs=epochs, print_every=4000, learning_rate=0.001, momentum=0.9)
+
+    return model
+
+def train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device,
+                              custom_images=None):
+    """
+    Trains and evaluates CIFAR-10 classifier models with different percentages of cat images in the training dataset,
+    either using original cat images or custom synthetic cat images.
+
+    This function trains multiple models for each percentage of cat images specified in the 'percentages' list.
+    Each model is trained 'num_trials' times and evaluated on the test dataset. If custom_images is provided,
+    it will use the synthetic cat images instead of the original cat images from the trainset. The evaluation
+    metrics for each model are stored in a dictionary keyed by the percentage of cat images.
+
+    Args:
+        percentages (list): A list of percentages of cat images to include in the training dataset, each in the range [0, 100].
+        num_trials (int): The number of times each model should be trained and evaluated.
+        trainset (torch.utils.data.Dataset): The original CIFAR-10 training dataset.
+        trainloader (torch.utils.data.DataLoader): The original DataLoader for the CIFAR-10 training dataset.
+        testloader (torch.utils.data.DataLoader): The DataLoader for the CIFAR-10 test dataset.
+        device (torch.device): The device to use for training and evaluating the models (e.g., 'cpu' or 'cuda').
+        custom_images (torch.tensor, optional): A tensor containing custom synthetic cat images. If provided,
+                                                the function will use these images instead of the original cat
+                                                images from the trainset.
+
+    Returns:
+        all_metrics (dict): A dictionary containing the evaluation metrics for each model, keyed by the percentage
+                            of cat images in the training dataset. Each value in the dictionary is a list of metrics
+                            dictionaries, one for each trial.
+    """
+    all_metrics = {p: [] for p in percentages}
+
+    for p in percentages:
+        print(p)
+        for _ in range(num_trials):
+            if custom_images is None:
+                model = train_cifar_model_with_cats(p, trainset, trainloader, device)
+            else:
+                model = train_cifar_model_with_cats(p, trainset, trainloader, device, custom_images=custom_images)
+
+            metrics = calculate_metrics(model, testloader, device)
+            all_metrics[p].append(metrics)
+
+    return all_metrics
