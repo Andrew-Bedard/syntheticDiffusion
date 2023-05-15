@@ -13,6 +13,7 @@ import pandas as pd
 from collections import Counter
 import streamlit as st
 
+
 def resize_normalize(img_path):
     """ Resize 512 by 512 rgb images that we get from stable diffusion, convert to pytorch tensor, then normalize
     """
@@ -600,5 +601,6 @@ def average_metrics(all_metrics, num_trials):
         averaged_metrics[p] = averaged
 
     return averaged_metrics
+
 
 

@@ -9,9 +9,9 @@ from PIL import Image
 from torch.utils.data import Subset
 
 from src.data.data_utils import class_distribution_df, CustomDataset, load_and_transform_images, \
-    load_cifar10_testset, load_cifar10_trainset, average_metrics
+    load_cifar10_testset, load_cifar10_trainset
 from src.viewer.visualization_utils import bar_chart_classes, plot_single_per_class_accuracy
-from src.model.model import train_and_display, calculate_metrics, Net, train_and_evaluate_models
+from src.model.model import train_and_display, calculate_metrics, Net, perform_batch_training_and_metrics
 
 torch.manual_seed(0)
 
@@ -92,40 +92,142 @@ def synCats_page():
 
 
 def preCalc_page():
-    def perform_batch_training_and_metrics(real_or_synthetic, num_trials, percentages, custom_images=None):
-        """
-        Performs batch training and metrics calculation for real or synthetic cats.
 
-        This function loads the CIFAR-10 dataset, trains and evaluates models for each percentage of cat images,
-        and calculates the average metrics across the specified number of trials. It returns a DataFrame with the
-        averaged metrics and saves the results to a CSV file.
+    # import plotly.graph_objects as go
 
-        Args:
-            real_or_synthetic (str): A string indicating whether to use real cats ('real') or synthetic cats ('synthetic').
-            num_trials (int): The number of trials to run per percentage holdout of cat images.
-            percentages (list): A list of percentages of cat images to include in the training dataset.
-            custom_images (torch.Tensor, optional): A tensor containing custom synthetic cat images. Required if real_or_synthetic is 'synthetic'.
+    def create_interactive_plot(df):
+        import plotly.graph_objs as go
 
-        Returns:
-            metrics_df (pd.DataFrame): A DataFrame containing the averaged metrics for each percentage of cat images.
-        """
-        # Function implementation...
+        # Create a Plotly figure
+        fig = go.Figure()
 
-        trainset, trainloader = load_cifar10_trainset()
-        testset, testloader = load_cifar10_testset()
+        # Define the metrics
+        metrics = ['accuracy', 'per_class_accuracy', 'precision', 'recall', 'f1_score']
 
-        all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device,
-                                                custom_images=custom_images)
-        averaged_metrics = average_metrics(all_metrics, num_trials)
+        # Add traces for each source and metric
+        for metric in metrics:
+            for source in df['source'].unique():
+                visible = metric == 'accuracy'
+                fig.add_trace(go.Scatter(x=df[(df['source'] == source) & (df['metric'] == metric)]['percentage'],
+                                         y=df[(df['source'] == source) & (df['metric'] == metric)]['value'],
+                                         mode='lines+markers',
+                                         name=f"{source} {metric}",
+                                         visible=visible))
 
-        metrics_df = pd.DataFrame(averaged_metrics)
+        # Update layout with dropdown menu for metrics
+        fig.update_layout(
+            title="Comparison of Metrics for Real and Synthetic",
+            xaxis_title="Percentage",
+            yaxis_title="Value",
+            updatemenus=[
+                go.layout.Updatemenu(
+                    buttons=list([
+                        dict(label=metric,
+                             method="update",
+                             args=[{"visible": [m == metric for m in metrics for _ in range(2)]},
+                                   {"title": metric}])
+                        for metric in metrics
+                    ]),
+                    direction="down",
+                    pad={"r": 10, "t": 10},
+                    showactive=True,
+                    x=0.1,
+                    xanchor="left",
+                    y=1.1,
+                    yanchor="top",
+                ),
+            ]
+        )
 
-        if real_or_synthetic == "real":
-            metrics_df.to_csv('data/precalc_metrics_real1.csv')
-        else:
-            metrics_df.to_csv('data/precalc_metrics_synthetic1.csv')
+        return fig
 
-        return metrics_df
+    def create_comparison_plot(df1, df2, metric_names, class_index):
+        # Add a 'source' column to identify the origin
+        df1['source'] = 'Real'
+        df2['source'] = 'Synthetic'
+
+        # Melt the dataframes to a long format
+        df1 = df1.melt(id_vars=['metric', 'source'], var_name='percentage', value_name='value')
+        df2 = df2.melt(id_vars=['metric', 'source'], var_name='percentage', value_name='value')
+
+        # Merge the two dataframes
+        combined_df = pd.concat([df1, df2])
+
+        # Filter rows based on the metric names
+        #combined_df = combined_df[combined_df['metric'].isin(metric_names)]
+
+        # Something weird is happening where the values in the dataframe are being saved as a string instead of a list,
+        # let's convert these back into lists
+
+        # Custom function to convert mixed format strings to either a single float or a list of floats
+        def mixed_str_to_float(mixed_str):
+            mixed_str = mixed_str.strip()
+            if mixed_str.startswith('[') and mixed_str.endswith(']'):
+                mixed_str = mixed_str[1:-1]  # Remove the brackets
+                return [float(x) for x in mixed_str.split()]
+            else:
+                return float(mixed_str)
+
+        # Apply the custom function to the DataFrame column
+        combined_df['value'] = combined_df['value'].apply(mixed_str_to_float)
+
+        # Modify this line in the `create_comparison_plot` function:
+        combined_df.loc[combined_df['metric'] != 'accuracy', 'value'] = combined_df.loc[
+            combined_df['metric'] != 'accuracy', 'value'].apply(lambda x: x[class_index])
+
+        # Convert 'percentage' column to numeric type
+        combined_df['percentage'] = pd.to_numeric(combined_df['percentage'])
+
+        # Call the function with your DataFrame
+        return create_interactive_plot(combined_df)
+
+
+    df_real = pd.read_csv("data/precalc_metrics_real1.csv")
+    df_syn = pd.read_csv("data/precalc_metrics_synthetic1.csv")
+
+    metric_names = ['per_class_accuracy', 'precision', 'recall', 'f1_score']
+
+    fig = create_comparison_plot(df_real, df_syn, metric_names, 3)
+    st.plotly_chart(fig)
+
+    # # Function to plot the line plot for each metric
+    # def plot_metric(df, metric_name, class_index):
+    #     fig = go.Figure()
+    #
+    #     for i in range(10):  # Assuming there are 10 classes in the CIFAR-10 dataset
+    #         fig.add_trace(go.Scatter(x=df.columns[1:],
+    #                                  y=[float(x.strip()[1:-1].split()[i]) for x in
+    #                                     df.loc[df['metric'] == metric_name].values[0][1:]],
+    #                                  mode='lines+markers',
+    #                                  name=f'Class {i}'))
+    #
+    #     fig.update_layout(title=f'{metric_name} for Class {class_index} across Models',
+    #                       xaxis_title='Percentage of Cat Images',
+    #                       yaxis_title=f'{metric_name}')
+    #
+    #     return fig
+    #
+    # # Display line plots for each metric
+    # st.plotly_chart(plot_metric(df_dummy, 'per_class_accuracy', 0))
+    # st.plotly_chart(plot_metric(df_dummy, 'precision', 0))
+    # st.plotly_chart(plot_metric(df_dummy, 'recall', 0))
+    # st.plotly_chart(plot_metric(df_dummy, 'f1_score', 0))
+
+    # def plot_accuracy():
+    #     fig = go.Figure()
+    #
+    #     fig.add_trace(go.Scatter(x=df.columns[1:],
+    #                              y=df.loc[df['metric'] == 'accuracy'].values[0][1:],
+    #                              mode='lines+markers',
+    #                              name='Accuracy'))
+    #
+    #     fig.update_layout(title='Overall Accuracy across Models',
+    #                       xaxis_title='Percentage of Cat Images',
+    #                       yaxis_title='Accuracy')
+    #
+    #     return fig
+    #
+    # st.plotly_chart(plot_accuracy())
 
     display_content = st.checkbox("Rerun models and benchmarking", value=False)
     if display_content:
@@ -135,89 +237,18 @@ def preCalc_page():
         st.markdown("WARNING! Depending on how many trails you select, pressing the following button will take a long "
                     "time to complete")
         num_trials = st.selectbox('Select number of trails to run per % holdout of cat images:', list(range(1, 11)))
-        # if st.button("Perform batch training/metrics for real cats"):
-        #     # trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
-        #     trainset, trainloader = load_cifar10_trainset()
-        #     testset, testloader = load_cifar10_testset()
-        #
-        #     st.title("Pre-calculated results")
-        #
-        #     # Assuming you have your trainset, trainloader, testloader, and device set up
-        #     all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device)
-        #     averaged_metrics = average_metrics(all_metrics, num_trials)
-        #
-        #     metrics_df = pd.DataFrame(averaged_metrics)
-        #     metrics_df.to_csv('data/precalc_metrics_real1.csv')  # TODO: this does not save the correct name for the first
-        #     # column, has to edited manually as 'metric'
-        #     st.dataframe(metrics_df)
-        #
-        # if st.button("Perform batch training/metrics for synthetic cats"):
-        #     # trainset, trainloader, testset, testloader = load_cifar10(cifar_percentage)
-        #     trainset, trainloader = load_cifar10_trainset()
-        #     testset, testloader = load_cifar10_testset()
-        #
-        #     st.title("Pre-calculated results")
-        #
-        #     # Assuming you have your trainset, trainloader, testloader, and device set up
-        #     all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device,
-        #                                             custom_images=custom_images)
-        #     averaged_metrics = average_metrics(all_metrics, num_trials)
-        #
-        #     metrics_df = pd.DataFrame(averaged_metrics)
-        #     metrics_df.to_csv('data/precalc_metrics_synthetic1.csv')
-        #     st.dataframe(metrics_df)
+
         if st.button("Perform batch training/metrics for real cats"):
             st.title("Pre-calculated results")
-            metrics_df = perform_batch_training_and_metrics("real", num_trials, percentages)
+            metrics_df = perform_batch_training_and_metrics("real", num_trials, percentages, device)
             st.dataframe(metrics_df)
 
         if st.button("Perform batch training/metrics for synthetic cats"):
             st.title("Pre-calculated results")
-            metrics_df = perform_batch_training_and_metrics("synthetic", num_trials, percentages, custom_images=custom_images)
+            metrics_df = perform_batch_training_and_metrics("synthetic", num_trials, percentages, device, custom_images=custom_images)
             st.dataframe(metrics_df)
 
-# def preCalc_page():
-#
-#     df = pd.read_csv("data/test.csv")
-#     import plotly.graph_objects as go
-#
-#     # Function to plot the line plot for each metric
-#     def plot_metric(metric_name, class_index):
-#         fig = go.Figure()
-#
-#         for i in range(10):  # Assuming there are 10 classes in the CIFAR-10 dataset
-#             fig.add_trace(go.Scatter(x=df.columns[1:],
-#                                      y=[float(x.strip()[1:-1].split()[i]) for x in
-#                                         df.loc[df['metric'] == metric_name].values[0][1:]],
-#                                      mode='lines+markers',
-#                                      name=f'Class {i}'))
-#
-#         fig.update_layout(title=f'{metric_name} for Class {class_index} across Models',
-#                           xaxis_title='Percentage of Cat Images',
-#                           yaxis_title=f'{metric_name}')
-#
-#         return fig
-#
-#     # Display line plots for each metric
-#     st.plotly_chart(plot_metric('precision', 0))
-#     st.plotly_chart(plot_metric('recall', 0))
-#     st.plotly_chart(plot_metric('f1_score', 0))
-#
-#     def plot_accuracy():
-#         fig = go.Figure()
-#
-#         fig.add_trace(go.Scatter(x=df.columns[1:],
-#                                  y=df.loc[df['metric'] == 'accuracy'].values[0][1:],
-#                                  mode='lines+markers',
-#                                  name='Accuracy'))
-#
-#         fig.update_layout(title='Overall Accuracy across Models',
-#                           xaxis_title='Percentage of Cat Images',
-#                           yaxis_title='Accuracy')
-#
-#         return fig
-#
-#     st.plotly_chart(plot_accuracy())
+
 
 
 def handsOn_page():

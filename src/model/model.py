@@ -1,13 +1,14 @@
 """
 NN model, training, benchmarking
 """
+import pandas as pd
 from sklearn.metrics import confusion_matrix
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import streamlit as st
-from src.data.data_utils import CustomDataset
+from src.data.data_utils import CustomDataset, load_cifar10_trainset, load_cifar10_testset, average_metrics
 import random
 
 # Define a callback function to update the progress bar for model training
@@ -326,3 +327,39 @@ def train_and_evaluate_models(percentages, num_trials, trainset, trainloader, te
             all_metrics[p].append(metrics)
 
     return all_metrics
+
+
+def perform_batch_training_and_metrics(real_or_synthetic, num_trials, percentages, device, custom_images=None):
+    """
+    Performs batch training and metrics calculation for real or synthetic cats.
+
+    This function loads the CIFAR-10 dataset, trains and evaluates models for each percentage of cat images,
+    and calculates the average metrics across the specified number of trials. It returns a DataFrame with the
+    averaged metrics and saves the results to a CSV file.
+
+    Args:
+        real_or_synthetic (str): A string indicating whether to use real cats ('real') or synthetic cats ('synthetic').
+        num_trials (int): The number of trials to run per percentage holdout of cat images.
+        percentages (list): A list of percentages of cat images to include in the training dataset.
+        custom_images (torch.Tensor, optional): A tensor containing custom synthetic cat images. Required if real_or_synthetic is 'synthetic'.
+
+    Returns:
+        metrics_df (pd.DataFrame): A DataFrame containing the averaged metrics for each percentage of cat images.
+    """
+    # Function implementation...
+
+    trainset, trainloader = load_cifar10_trainset()
+    testset, testloader = load_cifar10_testset()
+
+    all_metrics = train_and_evaluate_models(percentages, num_trials, trainset, trainloader, testloader, device,
+                                            custom_images=custom_images)
+    averaged_metrics = average_metrics(all_metrics, num_trials)
+
+    metrics_df = pd.DataFrame(averaged_metrics)
+
+    if real_or_synthetic == "real":
+        metrics_df.to_csv('data/precalc_metrics_real1.csv')
+    else:
+        metrics_df.to_csv('data/precalc_metrics_synthetic1.csv')
+
+    return metrics_df
