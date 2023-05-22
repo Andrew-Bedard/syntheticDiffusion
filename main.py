@@ -10,7 +10,8 @@ from torch.utils.data import Subset
 
 from src.data.data_utils import class_distribution_df, CustomDataset, load_and_transform_images, \
     load_cifar10_testset, load_cifar10_trainset
-from src.viewer.visualization_utils import bar_chart_classes, plot_single_per_class_accuracy
+from src.viewer.visualization_utils import bar_chart_classes, plot_single_per_class_accuracy, create_comparison_plot, \
+    show_images_in_grid
 from src.model.model import train_and_display, calculate_metrics, Net, perform_batch_training_and_metrics
 
 torch.manual_seed(0)
@@ -25,7 +26,9 @@ num_classes = 10
 cifar_percentage = 10
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'  # If gpu exists use cuda
-st.session_state.testset, st.session_state.testloader = load_cifar10_testset(batch_size)
+if 'testset' not in st.session_state:
+    st.session_state.testset, st.session_state.testloader = load_cifar10_testset(batch_size)
+
 
 # Load and transform synthetic cat images
 synthetic_imgDir = "..\\syntheticDiffusion\\data\\synthetic_cats\\"
@@ -85,149 +88,28 @@ def intro_page():
 
 
 def synCats_page():
+    import matplotlib.pyplot as plt
+    import random
+
     st.title("Generating Synthetic Images of cats")
     st.markdown("")
     st.markdown("[Stable Diffusion Web UI](https://github.com/AUTOMATIC1111/stable-diffusion-webui)",
                 unsafe_allow_html=True)
+
+    show_images_in_grid('data/synthetic_cats')
 
 
 def preCalc_page():
 
     # import plotly.graph_objects as go
 
-    def create_interactive_plot(df):
-        import plotly.graph_objs as go
-
-        # Create a Plotly figure
-        fig = go.Figure()
-
-        # Define the metrics
-        metrics = ['accuracy', 'per_class_accuracy', 'precision', 'recall', 'f1_score']
-
-        # Add traces for each source and metric
-        for metric in metrics:
-            for source in df['source'].unique():
-                visible = metric == 'accuracy'
-                fig.add_trace(go.Scatter(x=df[(df['source'] == source) & (df['metric'] == metric)]['percentage'],
-                                         y=df[(df['source'] == source) & (df['metric'] == metric)]['value'],
-                                         mode='lines+markers',
-                                         name=f"{source} {metric}",
-                                         visible=visible))
-
-        # Update layout with dropdown menu for metrics
-        fig.update_layout(
-            title="Comparison of Metrics for Real and Synthetic",
-            xaxis_title="Percentage",
-            yaxis_title="Value",
-            updatemenus=[
-                go.layout.Updatemenu(
-                    buttons=list([
-                        dict(label=metric,
-                             method="update",
-                             args=[{"visible": [m == metric for m in metrics for _ in range(2)]},
-                                   {"title": metric}])
-                        for metric in metrics
-                    ]),
-                    direction="down",
-                    pad={"r": 10, "t": 10},
-                    showactive=True,
-                    x=0.1,
-                    xanchor="left",
-                    y=1.1,
-                    yanchor="top",
-                ),
-            ]
-        )
-
-        return fig
-
-    def create_comparison_plot(df1, df2, metric_names, class_index):
-        # Add a 'source' column to identify the origin
-        df1['source'] = 'Real'
-        df2['source'] = 'Synthetic'
-
-        # Melt the dataframes to a long format
-        df1 = df1.melt(id_vars=['metric', 'source'], var_name='percentage', value_name='value')
-        df2 = df2.melt(id_vars=['metric', 'source'], var_name='percentage', value_name='value')
-
-        # Merge the two dataframes
-        combined_df = pd.concat([df1, df2])
-
-        # Filter rows based on the metric names
-        #combined_df = combined_df[combined_df['metric'].isin(metric_names)]
-
-        # Something weird is happening where the values in the dataframe are being saved as a string instead of a list,
-        # let's convert these back into lists
-
-        # Custom function to convert mixed format strings to either a single float or a list of floats
-        def mixed_str_to_float(mixed_str):
-            mixed_str = mixed_str.strip()
-            if mixed_str.startswith('[') and mixed_str.endswith(']'):
-                mixed_str = mixed_str[1:-1]  # Remove the brackets
-                return [float(x) for x in mixed_str.split()]
-            else:
-                return float(mixed_str)
-
-        # Apply the custom function to the DataFrame column
-        combined_df['value'] = combined_df['value'].apply(mixed_str_to_float)
-
-        # Modify this line in the `create_comparison_plot` function:
-        combined_df.loc[combined_df['metric'] != 'accuracy', 'value'] = combined_df.loc[
-            combined_df['metric'] != 'accuracy', 'value'].apply(lambda x: x[class_index])
-
-        # Convert 'percentage' column to numeric type
-        combined_df['percentage'] = pd.to_numeric(combined_df['percentage'])
-
-        # Call the function with your DataFrame
-        return create_interactive_plot(combined_df)
-
-
-    df_real = pd.read_csv("data/precalc_metrics_real1.csv")
-    df_syn = pd.read_csv("data/precalc_metrics_synthetic1.csv")
+    df_real = pd.read_csv("data/precalc_metrics_real.csv")
+    df_syn = pd.read_csv("data/precalc_metrics_synthetic.csv")
 
     metric_names = ['per_class_accuracy', 'precision', 'recall', 'f1_score']
 
     fig = create_comparison_plot(df_real, df_syn, metric_names, 3)
     st.plotly_chart(fig)
-
-    # # Function to plot the line plot for each metric
-    # def plot_metric(df, metric_name, class_index):
-    #     fig = go.Figure()
-    #
-    #     for i in range(10):  # Assuming there are 10 classes in the CIFAR-10 dataset
-    #         fig.add_trace(go.Scatter(x=df.columns[1:],
-    #                                  y=[float(x.strip()[1:-1].split()[i]) for x in
-    #                                     df.loc[df['metric'] == metric_name].values[0][1:]],
-    #                                  mode='lines+markers',
-    #                                  name=f'Class {i}'))
-    #
-    #     fig.update_layout(title=f'{metric_name} for Class {class_index} across Models',
-    #                       xaxis_title='Percentage of Cat Images',
-    #                       yaxis_title=f'{metric_name}')
-    #
-    #     return fig
-    #
-    # # Display line plots for each metric
-    # st.plotly_chart(plot_metric(df_dummy, 'per_class_accuracy', 0))
-    # st.plotly_chart(plot_metric(df_dummy, 'precision', 0))
-    # st.plotly_chart(plot_metric(df_dummy, 'recall', 0))
-    # st.plotly_chart(plot_metric(df_dummy, 'f1_score', 0))
-
-    # def plot_accuracy():
-    #     fig = go.Figure()
-    #
-    #     fig.add_trace(go.Scatter(x=df.columns[1:],
-    #                              y=df.loc[df['metric'] == 'accuracy'].values[0][1:],
-    #                              mode='lines+markers',
-    #                              name='Accuracy'))
-    #
-    #     fig.update_layout(title='Overall Accuracy across Models',
-    #                       xaxis_title='Percentage of Cat Images',
-    #                       yaxis_title='Accuracy')
-    #
-    #     return fig
-    #
-    # st.plotly_chart(plot_accuracy())
 
     display_content = st.checkbox("Rerun models and benchmarking", value=False)
     if display_content:
@@ -247,8 +129,6 @@ def preCalc_page():
             st.title("Pre-calculated results")
             metrics_df = perform_batch_training_and_metrics("synthetic", num_trials, percentages, device, custom_images=custom_images)
             st.dataframe(metrics_df)
-
-
 
 
 def handsOn_page():
@@ -273,7 +153,7 @@ def handsOn_page():
     labels = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
     class_counts_df = class_distribution_df(trainset)
     fig = bar_chart_classes(class_counts_df)
-    st.pyplot(fig)
+    st.plotly_chart(fig)
 
     st.markdown("""We should now benchmark this base CIFAR-10 model with this subsampled training set. You can either 
     choose to load the CIFAR-10 base model that was included in the repository, or train a new one yourself on the 
